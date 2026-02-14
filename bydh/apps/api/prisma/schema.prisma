@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model HouseType {
+  id          String          @id @default(cuid())
+  key         String          @unique
+  label       String
+  description String?
+  buildItems  BuildCostItem[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model BuildCostItem {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  stage        String
+  name         String
+  amountIls    Decimal   @db.Decimal(14, 2)
+  percentHint  Decimal?  @db.Decimal(6, 2)
+  notes        String?
+  order        Int       @default(0)
+  houseTypeId  String
+  houseType    HouseType @relation(fields: [houseTypeId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model ExpenseType {
+  id        String         @id @default(cuid())
+  key       String         @unique
+  label     String
+  items     FamilyExpense[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+model FamilyProfile {
+  id          String         @id @default(cuid())
+  key         String         @unique
+  familyName  String
+  monthlyGoal Decimal?       @db.Decimal(12, 2)
+  incomes     IncomeSource[]
+  investments Investment[]
+  expenses    FamilyExpense[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model IncomeSource {
+  id          String        @id @default(cuid())
+  name        String
+  monthlyIls  Decimal       @db.Decimal(12, 2)
+  type        String
+  familyId    String
+  family      FamilyProfile @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Investment {
+  id             String        @id @default(cuid())
+  name           String
+  accountType    String
+  provider       String?
+  currentValueIls Decimal      @db.Decimal(14, 2)
+  yearlyDepositIls Decimal?    @db.Decimal(14, 2)
+  familyId       String
+  family         FamilyProfile @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model FamilyExpense {
+  id          String        @id @default(cuid())
+  name        String
+  monthlyIls  Decimal       @db.Decimal(12, 2)
+  typeId      String
+  type        ExpenseType   @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  familyId    String
+  family      FamilyProfile @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Scenario {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  label          String
+  totalCostIls   Decimal  @db.Decimal(14, 2)
+  equityIls      Decimal  @db.Decimal(14, 2)
+  mortgageIls    Decimal  @db.Decimal(14, 2)
+  monthlyPayIls  Decimal  @db.Decimal(12, 2)
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
