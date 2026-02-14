@@ -12,16 +12,27 @@ loadEnv({ path: existsSync(workspaceEnvPath) ? workspaceEnvPath : rootEnvPath })
 
 const app = express()
 const port = Number(process.env.PORT ?? 4010)
+const databaseUrl = process.env.DATABASE_URL?.trim()
+const jwtSecret = process.env.JWT_SECRET?.trim()
 
-if (!process.env.DATABASE_URL) {
+if (databaseUrl) {
+  process.env.DATABASE_URL = databaseUrl
+}
+if (jwtSecret) {
+  process.env.JWT_SECRET = jwtSecret
+}
+
+if (!databaseUrl) {
   throw new Error(
-    'DATABASE_URL is missing. Create apps/api/.env and set DATABASE_URL=postgresql://user:pass@host:5432/dbname',
+    'DATABASE_URL is missing. Set DATABASE_URL in Render service environment variables (or apps/api/.env for local development).',
   )
 }
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  throw new Error('JWT_SECRET is missing. Create apps/api/.env and set JWT_SECRET.')
+if (process.env.NODE_ENV === 'production' && !jwtSecret) {
+  throw new Error(
+    'JWT_SECRET is missing. Set JWT_SECRET in Render service environment variables.',
+  )
 }
-if (process.env.NODE_ENV !== 'production' && !process.env.JWT_SECRET) {
+if (process.env.NODE_ENV !== 'production' && !jwtSecret) {
   console.warn('JWT_SECRET is missing. Falling back to development-only secret.')
 }
 

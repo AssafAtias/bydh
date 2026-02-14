@@ -9,11 +9,14 @@ interface JwtPayload {
 }
 
 const getJwtSecret = (): string => {
-  if (process.env.JWT_SECRET) {
-    return process.env.JWT_SECRET
+  const jwtSecret = process.env.JWT_SECRET?.trim()
+
+  if (jwtSecret) {
+    process.env.JWT_SECRET = jwtSecret
+    return jwtSecret
   }
   if (process.env.NODE_ENV === 'production') {
-    throw new Error('JWT_SECRET is missing.')
+    throw new Error('JWT_SECRET is missing. Set JWT_SECRET in Render env vars.')
   }
   return 'dev-only-secret-change-me'
 }
