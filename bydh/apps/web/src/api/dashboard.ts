@@ -114,8 +114,15 @@ export type FamilyProfile = z.infer<typeof profileSchema>
 export type AuthUser = z.infer<typeof authUserSchema>
 export type FinanceType = FamilyFinance['expenseTypes'][number]
 
+const apiBaseUrl =
+  import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4010/api' : undefined)
+
+if (!apiBaseUrl) {
+  throw new Error('VITE_API_URL is required in production')
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:4010/api',
+  baseURL: apiBaseUrl,
 })
 
 api.interceptors.request.use((config) => {

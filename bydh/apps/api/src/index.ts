@@ -36,7 +36,13 @@ if (process.env.NODE_ENV !== 'production' && !jwtSecret) {
   console.warn('JWT_SECRET is missing. Falling back to development-only secret.')
 }
 
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') ?? '*' }))
+const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()).filter(Boolean)
+
+app.use(
+  cors({
+    origin: corsOrigins?.length ? corsOrigins : '*',
+  }),
+)
 app.use(express.json())
 
 app.get('/health', (_req, res) => {
