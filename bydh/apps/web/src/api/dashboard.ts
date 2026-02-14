@@ -38,6 +38,7 @@ const financeSchema = z.object({
       id: z.string(),
       name: z.string(),
       type: z.string(),
+      typeId: z.string().nullable(),
       monthlyIls: z.number(),
     }),
   ),
@@ -61,6 +62,13 @@ const financeSchema = z.object({
     }),
   ),
   expenseTypes: z.array(
+    z.object({
+      id: z.string(),
+      key: z.string(),
+      label: z.string(),
+    }),
+  ),
+  incomeTypes: z.array(
     z.object({
       id: z.string(),
       key: z.string(),
@@ -104,6 +112,7 @@ export type FamilyFinance = z.infer<typeof financeSchema>
 export type Scenario = z.infer<typeof scenarioSchema>
 export type FamilyProfile = z.infer<typeof profileSchema>
 export type AuthUser = z.infer<typeof authUserSchema>
+export type FinanceType = FamilyFinance['expenseTypes'][number]
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:4010/api',
@@ -173,14 +182,18 @@ export async function getFinanceData(profileId?: string): Promise<FamilyFinance>
   return financeSchema.parse(response.data)
 }
 
-export async function getScenarios(): Promise<Scenario[]> {
-  const response = await api.get('/scenarios')
+export async function getScenarios(profileId?: string): Promise<Scenario[]> {
+  const response = await api.get('/scenarios', {
+    params: profileId ? { profileId } : undefined,
+  })
   return z.array(scenarioSchema).parse(response.data)
 }
 
 export async function createIncome(payload: {
   name: string
-  type: string
+  type?: string
+  typeId?: string
+  typeLabel?: string
   monthlyIls: number
   profileId?: string
 }): Promise<void> {
@@ -191,7 +204,9 @@ export async function updateIncome(
   id: string,
   payload: {
     name: string
-    type: string
+    type?: string
+    typeId?: string
+    typeLabel?: string
     monthlyIls: number
   },
 ): Promise<void> {
@@ -254,6 +269,30 @@ export async function updateExpense(
 
 export async function deleteExpense(id: string): Promise<void> {
   await api.delete(`/finances/expenses/${id}`)
+}
+
+export async function createExpenseType(payload: { label: string }): Promise<void> {
+  await api.post('/finances/expense-types', payload)
+}
+
+export async function updateExpenseType(id: string, payload: { label: string }): Promise<void> {
+  await api.patch(`/finances/expense-types/${id}`, payload)
+}
+
+export async function deleteExpenseType(id: string): Promise<void> {
+  await api.delete(`/finances/expense-types/${id}`)
+}
+
+export async function createIncomeType(payload: { label: string }): Promise<void> {
+  await api.post('/finances/income-types', payload)
+}
+
+export async function updateIncomeType(id: string, payload: { label: string }): Promise<void> {
+  await api.patch(`/finances/income-types/${id}`, payload)
+}
+
+export async function deleteIncomeType(id: string): Promise<void> {
+  await api.delete(`/finances/income-types/${id}`)
 }
 
 export async function createBuildItem(payload: {

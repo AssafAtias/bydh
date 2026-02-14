@@ -18,6 +18,12 @@ const asString = (value: unknown): string => String(value ?? '').trim()
 const hasValue = (value: string): boolean => value.length > 0
 
 const makeProfileKey = (): string => `profile_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+const makeTypeKey = (prefix: 'income' | 'expense', label: string): string =>
+  `${prefix}_${label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24)}_${Math.random().toString(36).slice(2, 7)}`
 
 const resolveCurrentUserId = async (req: Request, res: Response): Promise<string | null> => {
   const userId = getUserIdFromRequest(req)
@@ -183,7 +189,7 @@ router.get('/finances', async (req, res) => {
       ownerUserId: userId,
     },
     include: {
-      incomes: true,
+      incomes: { include: { typeRef: true } },
       investments: true,
       expenses: { include: { type: true } },
     },
@@ -199,6 +205,7 @@ router.get('/finances', async (req, res) => {
   const netMonthly = monthlyIncome - monthlyExpenses
   const investmentsTotal = family.investments.reduce((sum, item) => sum + asNumber(item.currentValueIls), 0)
   const expenseTypes = await prisma.expenseType.findMany({ orderBy: { label: 'asc' } })
+  const incomeTypes = await prisma.incomeType.findMany({ orderBy: { label: 'asc' } })
 
   res.json({
     id: family.id,
@@ -214,7 +221,8 @@ router.get('/finances', async (req, res) => {
     incomes: family.incomes.map((item) => ({
       id: item.id,
       name: item.name,
-      type: item.type,
+      type: item.typeRef?.label ?? item.type,
+      typeId: item.typeId,
       monthlyIls: asNumber(item.monthlyIls),
     })),
     investments: family.investments.map((item) => ({
@@ -237,7 +245,199 @@ router.get('/finances', async (req, res) => {
       key: item.key,
       label: item.label,
     })),
+    incomeTypes: incomeTypes.map((item) => ({
+      id: item.id,
+      key: item.key,
+      label: item.label,
+    })),
   })
+})
+
+router.get('/finances/income-types', async (_req, res) => {
+  const types = await prisma.incomeType.findMany({ orderBy: { label: 'asc' } })
+  res.json(
+    types.map((type) => ({
+      id: type.id,
+      key: type.key,
+      label: type.label,
+    })),
+  )
+})
+
+router.post('/finances/income-types', async (req, res) => {
+  const label = asString(req.body?.label)
+  if (!hasValue(label)) {
+    res.status(400).json({ message: 'label is required.' })
+    return
+  }
+
+  const existing = await prisma.incomeType.findFirst({
+    where: { label: { equals: label, mode: 'insensitive' } },
+  })
+  if (existing) {
+    res.status(409).json({ message: 'Income type already exists.' })
+    return
+  }
+
+  const created = await prisma.incomeType.create({
+    data: {
+      key: makeTypeKey('income', label),
+      label,
+    },
+  })
+
+  res.status(201).json({
+    id: created.id,
+    key: created.key,
+    label: created.label,
+  })
+})
+
+router.patch('/finances/income-types/:id', async (req, res) => {
+  const id = asString(req.params.id)
+  const label = asString(req.body?.label)
+  if (!hasValue(label)) {
+    res.status(400).json({ message: 'label is required.' })
+    return
+  }
+
+  const existing = await prisma.incomeType.findUnique({ where: { id } })
+  if (!existing) {
+    res.status(404).json({ message: 'Income type not found.' })
+    return
+  }
+
+  const duplicate = await prisma.incomeType.findFirst({
+    where: {
+      id: { not: id },
+      label: { equals: label, mode: 'insensitive' },
+    },
+  })
+  if (duplicate) {
+    res.status(409).json({ message: 'Income type already exists.' })
+    return
+  }
+
+  const updated = await prisma.incomeType.update({
+    where: { id },
+    data: { label },
+  })
+  await prisma.incomeSource.updateMany({
+    where: { typeId: id },
+    data: { type: label },
+  })
+
+  res.json({
+    id: updated.id,
+    key: updated.key,
+    label: updated.label,
+  })
+})
+
+router.delete('/finances/income-types/:id', async (req, res) => {
+  const id = asString(req.params.id)
+
+  const existing = await prisma.incomeType.findUnique({
+    where: { id },
+    include: { _count: { select: { items: true } } },
+  })
+  if (!existing) {
+    res.status(404).json({ message: 'Income type not found.' })
+    return
+  }
+  if (existing._count.items > 0) {
+    res.status(400).json({ message: 'Cannot delete income type that is in use.' })
+    return
+  }
+
+  await prisma.incomeType.delete({ where: { id } })
+  res.status(204).send()
+})
+
+router.post('/finances/expense-types', async (req, res) => {
+  const label = asString(req.body?.label)
+  if (!hasValue(label)) {
+    res.status(400).json({ message: 'label is required.' })
+    return
+  }
+
+  const existing = await prisma.expenseType.findFirst({
+    where: { label: { equals: label, mode: 'insensitive' } },
+  })
+  if (existing) {
+    res.status(409).json({ message: 'Expense type already exists.' })
+    return
+  }
+
+  const created = await prisma.expenseType.create({
+    data: {
+      key: makeTypeKey('expense', label),
+      label,
+    },
+  })
+
+  res.status(201).json({
+    id: created.id,
+    key: created.key,
+    label: created.label,
+  })
+})
+
+router.patch('/finances/expense-types/:id', async (req, res) => {
+  const id = asString(req.params.id)
+  const label = asString(req.body?.label)
+  if (!hasValue(label)) {
+    res.status(400).json({ message: 'label is required.' })
+    return
+  }
+
+  const existing = await prisma.expenseType.findUnique({ where: { id } })
+  if (!existing) {
+    res.status(404).json({ message: 'Expense type not found.' })
+    return
+  }
+
+  const duplicate = await prisma.expenseType.findFirst({
+    where: {
+      id: { not: id },
+      label: { equals: label, mode: 'insensitive' },
+    },
+  })
+  if (duplicate) {
+    res.status(409).json({ message: 'Expense type already exists.' })
+    return
+  }
+
+  const updated = await prisma.expenseType.update({
+    where: { id },
+    data: { label },
+  })
+
+  res.json({
+    id: updated.id,
+    key: updated.key,
+    label: updated.label,
+  })
+})
+
+router.delete('/finances/expense-types/:id', async (req, res) => {
+  const id = asString(req.params.id)
+
+  const existing = await prisma.expenseType.findUnique({
+    where: { id },
+    include: { _count: { select: { items: true } } },
+  })
+  if (!existing) {
+    res.status(404).json({ message: 'Expense type not found.' })
+    return
+  }
+  if (existing._count.items > 0) {
+    res.status(400).json({ message: 'Cannot delete expense type that is in use.' })
+    return
+  }
+
+  await prisma.expenseType.delete({ where: { id } })
+  res.status(204).send()
 })
 
 router.post('/finances/incomes', async (req, res) => {
@@ -247,11 +447,13 @@ router.post('/finances/incomes', async (req, res) => {
   }
 
   const name = asString(req.body?.name)
-  const type = asString(req.body?.type) || 'salary'
+  const type = asString(req.body?.type)
+  const typeId = asString(req.body?.typeId)
+  const typeLabel = asString(req.body?.typeLabel)
   const monthlyIls = asOptionalNumber(req.body?.monthlyIls)
 
-  if (!hasValue(name) || monthlyIls === null) {
-    res.status(400).json({ message: 'name and monthlyIls are required.' })
+  if (!hasValue(name) || monthlyIls === null || (!hasValue(typeId) && !hasValue(typeLabel) && !hasValue(type))) {
+    res.status(400).json({ message: 'name, monthlyIls and typeId/typeLabel/type are required.' })
     return
   }
 
@@ -261,14 +463,43 @@ router.post('/finances/incomes', async (req, res) => {
     return
   }
 
+  let resolvedTypeId = typeId
+  let resolvedTypeLabel = type
+  if (hasValue(resolvedTypeId)) {
+    const selectedType = await prisma.incomeType.findUnique({ where: { id: resolvedTypeId } })
+    if (!selectedType) {
+      res.status(400).json({ message: 'Invalid income type.' })
+      return
+    }
+    resolvedTypeLabel = selectedType.label
+  } else {
+    const normalizedLabel = hasValue(typeLabel) ? typeLabel : type
+    const existingType = await prisma.incomeType.findFirst({
+      where: { label: { equals: normalizedLabel, mode: 'insensitive' } },
+      select: { id: true, label: true },
+    })
+    if (existingType) {
+      resolvedTypeId = existingType.id
+      resolvedTypeLabel = existingType.label
+    } else {
+      const createdType = await prisma.incomeType.create({
+        data: { key: makeTypeKey('income', normalizedLabel), label: normalizedLabel },
+      })
+      resolvedTypeId = createdType.id
+      resolvedTypeLabel = createdType.label
+    }
+  }
+
   const created = await prisma.incomeSource.create({
-    data: { name, type, monthlyIls, familyId },
+    data: { name, type: resolvedTypeLabel, typeId: resolvedTypeId, monthlyIls, familyId },
+    include: { typeRef: true },
   })
 
   res.status(201).json({
     id: created.id,
     name: created.name,
-    type: created.type,
+    type: created.typeRef?.label ?? created.type,
+    typeId: created.typeId,
     monthlyIls: asNumber(created.monthlyIls),
   })
 })
@@ -295,21 +526,54 @@ router.patch('/finances/incomes/:id', async (req, res) => {
 
   const name = asString(req.body?.name)
   const type = asString(req.body?.type)
+  const typeId = asString(req.body?.typeId)
+  const typeLabel = asString(req.body?.typeLabel)
   const monthlyIls = asOptionalNumber(req.body?.monthlyIls)
+
+  let resolvedTypeId = existing.typeId ?? null
+  let resolvedTypeLabel = existing.type
+  if (hasValue(typeId)) {
+    const selectedType = await prisma.incomeType.findUnique({ where: { id: typeId } })
+    if (!selectedType) {
+      res.status(400).json({ message: 'Invalid income type.' })
+      return
+    }
+    resolvedTypeId = selectedType.id
+    resolvedTypeLabel = selectedType.label
+  } else if (hasValue(typeLabel) || hasValue(type)) {
+    const normalizedLabel = hasValue(typeLabel) ? typeLabel : type
+    const existingType = await prisma.incomeType.findFirst({
+      where: { label: { equals: normalizedLabel, mode: 'insensitive' } },
+      select: { id: true, label: true },
+    })
+    if (existingType) {
+      resolvedTypeId = existingType.id
+      resolvedTypeLabel = existingType.label
+    } else {
+      const createdType = await prisma.incomeType.create({
+        data: { key: makeTypeKey('income', normalizedLabel), label: normalizedLabel },
+      })
+      resolvedTypeId = createdType.id
+      resolvedTypeLabel = createdType.label
+    }
+  }
 
   const updated = await prisma.incomeSource.update({
     where: { id },
     data: {
       name: hasValue(name) ? name : existing.name,
-      type: hasValue(type) ? type : existing.type,
+      type: resolvedTypeLabel,
+      typeId: resolvedTypeId,
       monthlyIls: monthlyIls ?? asNumber(existing.monthlyIls),
     },
+    include: { typeRef: true },
   })
 
   res.json({
     id: updated.id,
     name: updated.name,
-    type: updated.type,
+    type: updated.typeRef?.label ?? updated.type,
+    typeId: updated.typeId,
     monthlyIls: asNumber(updated.monthlyIls),
   })
 })
@@ -677,8 +941,28 @@ router.delete('/build/items/:id', async (req, res) => {
   res.status(204).send()
 })
 
-router.get('/scenarios', async (_req, res) => {
-  const scenarios = await prisma.scenario.findMany({ orderBy: { monthlyPayIls: 'asc' } })
+router.get('/scenarios', async (req, res) => {
+  const userId = await resolveCurrentUserId(req, res)
+  if (!userId) {
+    return
+  }
+
+  const resolvedFamilyId = await resolveRequestedFamilyId(userId, req.query.profileId)
+  if (!resolvedFamilyId) {
+    res.json([])
+    return
+  }
+
+  const defaultFamilyId = await getDefaultFamilyId(userId)
+  const includeLegacyGlobalScenarios = defaultFamilyId === resolvedFamilyId
+  const scenarios = await prisma.scenario.findMany({
+    where: includeLegacyGlobalScenarios
+      ? {
+          OR: [{ familyId: resolvedFamilyId }, { familyId: null }],
+        }
+      : { familyId: resolvedFamilyId },
+    orderBy: { monthlyPayIls: 'asc' },
+  })
 
   res.json(
     scenarios.map((item) => ({

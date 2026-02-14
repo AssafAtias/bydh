@@ -76,7 +76,11 @@ function App() {
     enabled: isAuthenticated && Boolean(selectedProfileId),
   })
   const buildQuery = useQuery({ queryKey: ['build'], queryFn: getBuildData, enabled: isAuthenticated })
-  const scenarioQuery = useQuery({ queryKey: ['scenarios'], queryFn: getScenarios, enabled: isAuthenticated })
+  const scenarioQuery = useQuery({
+    queryKey: ['scenarios', selectedProfileId],
+    queryFn: () => getScenarios(selectedProfileId),
+    enabled: isAuthenticated && Boolean(selectedProfileId),
+  })
   const loginMutation = useMutation({ mutationFn: login })
   const registerMutation = useMutation({ mutationFn: register })
   const createProfileMutation = useMutation({

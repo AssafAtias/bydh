@@ -3,7 +3,7 @@ import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, CardContent, Divider, IconButton, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useState } from 'react'
-import { createExpense, deleteExpense, updateExpense } from '../api/dashboard'
+import { createExpense, createExpenseType, deleteExpense, deleteExpenseType, updateExpense, updateExpenseType } from '../api/dashboard'
 import type { FamilyFinance } from '../api/dashboard'
 import { useI18n } from '../lib/i18n'
 import { toCurrency } from '../lib/format'
@@ -17,6 +17,8 @@ export function ExpensesSection({ finance, profileId }: Props) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const [drafts, setDrafts] = useState<Record<string, { name: string; monthlyIls: string; typeId: string }>>({})
+  const [typeDrafts, setTypeDrafts] = useState<Record<string, string>>({})
+  const [newTypeLabel, setNewTypeLabel] = useState('')
   const [newExpense, setNewExpense] = useState({
     name: '',
     monthlyIls: '',
@@ -31,7 +33,19 @@ export function ExpensesSection({ finance, profileId }: Props) {
     onSuccess: refresh,
   })
   const deleteMutation = useMutation({ mutationFn: deleteExpense, onSuccess: refresh })
-  const isBusy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending
+  const createTypeMutation = useMutation({ mutationFn: createExpenseType, onSuccess: refresh })
+  const updateTypeMutation = useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) => updateExpenseType(id, { label }),
+    onSuccess: refresh,
+  })
+  const deleteTypeMutation = useMutation({ mutationFn: deleteExpenseType, onSuccess: refresh })
+  const isBusy =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    deleteMutation.isPending ||
+    createTypeMutation.isPending ||
+    updateTypeMutation.isPending ||
+    deleteTypeMutation.isPending
 
   return (
     <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
@@ -172,6 +186,53 @@ export function ExpensesSection({ finance, profileId }: Props) {
                 )
               }
               disabled={isBusy || !newExpense.name.trim() || !newExpense.monthlyIls || !newExpense.typeId}
+            >
+              {t('buttonAdd')}
+            </Button>
+          </Stack>
+
+          <Divider />
+          <Typography variant="subtitle2" fontWeight={700}>
+            {t('expenseTypesTitle')}
+          </Typography>
+          {finance.expenseTypes.map((type) => (
+            <Stack key={type.id} direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+              <TextField
+                size="small"
+                label={t('fieldType')}
+                value={typeDrafts[type.id] ?? type.label}
+                onChange={(event) => setTypeDrafts((prev) => ({ ...prev, [type.id]: event.target.value }))}
+              />
+              <IconButton
+                color="primary"
+                onClick={() =>
+                  updateTypeMutation.mutate({
+                    id: type.id,
+                    label: (typeDrafts[type.id] ?? type.label).trim(),
+                  })
+                }
+                disabled={isBusy || !(typeDrafts[type.id] ?? type.label).trim()}
+              >
+                <SaveOutlinedIcon />
+              </IconButton>
+              <IconButton color="error" onClick={() => deleteTypeMutation.mutate(type.id)} disabled={isBusy}>
+                <DeleteOutlineIcon />
+              </IconButton>
+            </Stack>
+          ))}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <TextField
+              size="small"
+              label={t('typeNewLabel')}
+              value={newTypeLabel}
+              onChange={(event) => setNewTypeLabel(event.target.value)}
+            />
+            <Button
+              variant="contained"
+              onClick={() =>
+                createTypeMutation.mutate({ label: newTypeLabel.trim() }, { onSuccess: () => setNewTypeLabel('') })
+              }
+              disabled={isBusy || !newTypeLabel.trim()}
             >
               {t('buttonAdd')}
             </Button>

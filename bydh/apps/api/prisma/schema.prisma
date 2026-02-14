@@ -62,6 +62,7 @@ model FamilyProfile {
   incomes     IncomeSource[]
   investments Investment[]
   expenses    FamilyExpense[]
+  scenarios   Scenario[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -73,10 +74,21 @@ model IncomeSource {
   name        String
   monthlyIls  Decimal       @db.Decimal(12, 2)
   type        String
+  typeId      String?
+  typeRef     IncomeType?   @relation(fields: [typeId], references: [id], onDelete: Restrict)
   familyId    String
   family      FamilyProfile @relation(fields: [familyId], references: [id], onDelete: Cascade)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+}
+
+model IncomeType {
+  id        String         @id @default(cuid())
+  key       String         @unique
+  label     String
+  items     IncomeSource[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 }
 
 model Investment {
@@ -113,6 +125,10 @@ model Scenario {
   mortgageIls    Decimal  @db.Decimal(14, 2)
   monthlyPayIls  Decimal  @db.Decimal(12, 2)
   notes          String?
+  familyId       String?
+  family         FamilyProfile? @relation(fields: [familyId], references: [id], onDelete: Cascade)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@index([familyId])
 }

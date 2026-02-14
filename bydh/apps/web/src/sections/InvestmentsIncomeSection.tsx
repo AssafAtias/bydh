@@ -1,13 +1,16 @@
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, CardContent, Grid, IconButton, Stack, TextField, Typography } from '@mui/material'
-import { useState } from 'react'
+import { Button, Card, CardContent, Divider, Grid, IconButton, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { useEffect, useState } from 'react'
 import {
   createIncome,
+  createIncomeType,
   createInvestment,
+  deleteIncomeType,
   deleteIncome,
   deleteInvestment,
+  updateIncomeType,
   updateIncome,
   updateInvestment,
 } from '../api/dashboard'
@@ -24,14 +27,14 @@ interface Props {
 export function InvestmentsIncomeSection({ finance, profileId }: Props) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
-  const [incomeDrafts, setIncomeDrafts] = useState<Record<string, { name: string; type: string; monthlyIls: string }>>(
-    {},
-  )
+  const [incomeDrafts, setIncomeDrafts] = useState<Record<string, { name: string; typeId: string; monthlyIls: string }>>({})
   const [investmentDrafts, setInvestmentDrafts] = useState<
     Record<string, { name: string; accountType: string; provider: string; currentValueIls: string; yearlyDepositIls: string }>
   >({})
 
-  const [newIncome, setNewIncome] = useState({ name: '', type: 'salary', monthlyIls: '' })
+  const [incomeTypeDrafts, setIncomeTypeDrafts] = useState<Record<string, string>>({})
+  const [newIncomeTypeLabel, setNewIncomeTypeLabel] = useState('')
+  const [newIncome, setNewIncome] = useState({ name: '', typeId: '', monthlyIls: '' })
   const [newInvestment, setNewInvestment] = useState({
     name: '',
     accountType: '',
@@ -39,11 +42,25 @@ export function InvestmentsIncomeSection({ finance, profileId }: Props) {
     currentValueIls: '',
     yearlyDepositIls: '',
   })
+  useEffect(() => {
+    if (!newIncome.typeId && finance.incomeTypes[0]?.id) {
+      setNewIncome((prev) => ({ ...prev, typeId: finance.incomeTypes[0].id }))
+    }
+  }, [finance.incomeTypes, newIncome.typeId])
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['finances'] })
   const createIncomeMutation = useMutation({ mutationFn: createIncome, onSuccess: refresh })
-  const updateIncomeMutation = useMutation({ mutationFn: ({ id, data }: { id: string; data: { name: string; type: string; monthlyIls: number } }) => updateIncome(id, data), onSuccess: refresh })
+  const updateIncomeMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { name: string; typeId: string; monthlyIls: number } }) => updateIncome(id, data),
+    onSuccess: refresh,
+  })
   const deleteIncomeMutation = useMutation({ mutationFn: deleteIncome, onSuccess: refresh })
+  const createIncomeTypeMutation = useMutation({ mutationFn: createIncomeType, onSuccess: refresh })
+  const updateIncomeTypeMutation = useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) => updateIncomeType(id, { label }),
+    onSuccess: refresh,
+  })
+  const deleteIncomeTypeMutation = useMutation({ mutationFn: deleteIncomeType, onSuccess: refresh })
 
   const createInvestmentMutation = useMutation({ mutationFn: createInvestment, onSuccess: refresh })
   const updateInvestmentMutation = useMutation({
@@ -62,6 +79,9 @@ export function InvestmentsIncomeSection({ finance, profileId }: Props) {
     createIncomeMutation.isPending ||
     updateIncomeMutation.isPending ||
     deleteIncomeMutation.isPending ||
+    createIncomeTypeMutation.isPending ||
+    updateIncomeTypeMutation.isPending ||
+    deleteIncomeTypeMutation.isPending ||
     createInvestmentMutation.isPending ||
     updateInvestmentMutation.isPending ||
     deleteInvestmentMutation.isPending
@@ -110,27 +130,39 @@ export function InvestmentsIncomeSection({ finance, profileId }: Props) {
                           ...prev,
                           [income.id]: {
                             name: event.target.value,
-                            type: prev[income.id]?.type ?? income.type,
+                            typeId: prev[income.id]?.typeId ?? (income.typeId ?? ''),
                             monthlyIls: prev[income.id]?.monthlyIls ?? String(income.monthlyIls),
                           },
                         }))
                       }
                     />
                     <TextField
+                      select
                       size="small"
                       label={t('fieldType')}
-                      value={incomeDrafts[income.id]?.type ?? income.type}
+                      value={incomeDrafts[income.id]?.typeId ?? (income.typeId ?? '')}
                       onChange={(event) =>
                         setIncomeDrafts((prev) => ({
                           ...prev,
                           [income.id]: {
                             name: prev[income.id]?.name ?? income.name,
-                            type: event.target.value,
+                            typeId: event.target.value,
                             monthlyIls: prev[income.id]?.monthlyIls ?? String(income.monthlyIls),
                           },
                         }))
                       }
-                    />
+                    >
+                      {!income.typeId ? (
+                        <MenuItem value="">
+                          {income.type}
+                        </MenuItem>
+                      ) : null}
+                      {finance.incomeTypes.map((type) => (
+                        <MenuItem key={type.id} value={type.id}>
+                          {type.label}
+                        </MenuItem>
+                      ))}
+                    </TextField>
                     <TextField
                       size="small"
                       label={t('fieldMonthlyIls')}
@@ -141,7 +173,7 @@ export function InvestmentsIncomeSection({ finance, profileId }: Props) {
                           ...prev,
                           [income.id]: {
                             name: prev[income.id]?.name ?? income.name,
-                            type: prev[income.id]?.type ?? income.type,
+                            typeId: prev[income.id]?.typeId ?? (income.typeId ?? ''),
                             monthlyIls: event.target.value,
                           },
                         }))
@@ -154,7 +186,7 @@ export function InvestmentsIncomeSection({ finance, profileId }: Props) {
                           id: income.id,
                           data: {
                             name: incomeDrafts[income.id]?.name ?? income.name,
-                            type: incomeDrafts[income.id]?.type ?? income.type,
+                            typeId: incomeDrafts[income.id]?.typeId ?? (income.typeId ?? ''),
                             monthlyIls: Number(incomeDrafts[income.id]?.monthlyIls ?? income.monthlyIls),
                           },
                         })
@@ -177,11 +209,18 @@ export function InvestmentsIncomeSection({ finance, profileId }: Props) {
                     onChange={(event) => setNewIncome((prev) => ({ ...prev, name: event.target.value }))}
                   />
                   <TextField
+                  select
                     size="small"
                     label={t('fieldType')}
-                    value={newIncome.type}
-                    onChange={(event) => setNewIncome((prev) => ({ ...prev, type: event.target.value }))}
-                  />
+                  value={newIncome.typeId}
+                  onChange={(event) => setNewIncome((prev) => ({ ...prev, typeId: event.target.value }))}
+                >
+                  {finance.incomeTypes.map((type) => (
+                    <MenuItem key={type.id} value={type.id}>
+                      {type.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
                   <TextField
                     size="small"
                     label={t('fieldMonthlyIls')}
@@ -195,16 +234,67 @@ export function InvestmentsIncomeSection({ finance, profileId }: Props) {
                       createIncomeMutation.mutate(
                         {
                           name: newIncome.name.trim(),
-                          type: newIncome.type.trim() || 'salary',
+                          typeId: newIncome.typeId,
                           monthlyIls: Number(newIncome.monthlyIls),
                           profileId,
                         },
                         {
-                          onSuccess: () => setNewIncome({ name: '', type: 'salary', monthlyIls: '' }),
+                          onSuccess: () =>
+                            setNewIncome({ name: '', typeId: finance.incomeTypes[0]?.id ?? '', monthlyIls: '' }),
                         },
                       )
                     }
-                    disabled={isBusy || !newIncome.name.trim() || !newIncome.monthlyIls}
+                    disabled={isBusy || !newIncome.name.trim() || !newIncome.monthlyIls || !newIncome.typeId}
+                  >
+                    {t('buttonAdd')}
+                  </Button>
+                </Stack>
+
+                <Divider />
+                <Typography variant="subtitle2" fontWeight={700}>
+                  {t('incomeTypesTitle')}
+                </Typography>
+                {finance.incomeTypes.map((type) => (
+                  <Stack key={type.id} direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                    <TextField
+                      size="small"
+                      label={t('fieldType')}
+                      value={incomeTypeDrafts[type.id] ?? type.label}
+                      onChange={(event) => setIncomeTypeDrafts((prev) => ({ ...prev, [type.id]: event.target.value }))}
+                    />
+                    <IconButton
+                      color="primary"
+                      onClick={() =>
+                        updateIncomeTypeMutation.mutate({
+                          id: type.id,
+                          label: (incomeTypeDrafts[type.id] ?? type.label).trim(),
+                        })
+                      }
+                      disabled={isBusy || !(incomeTypeDrafts[type.id] ?? type.label).trim()}
+                    >
+                      <SaveOutlinedIcon />
+                    </IconButton>
+                    <IconButton color="error" onClick={() => deleteIncomeTypeMutation.mutate(type.id)} disabled={isBusy}>
+                      <DeleteOutlineIcon />
+                    </IconButton>
+                  </Stack>
+                ))}
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  <TextField
+                    size="small"
+                    label={t('typeNewLabel')}
+                    value={newIncomeTypeLabel}
+                    onChange={(event) => setNewIncomeTypeLabel(event.target.value)}
+                  />
+                  <Button
+                    variant="contained"
+                    onClick={() =>
+                      createIncomeTypeMutation.mutate(
+                        { label: newIncomeTypeLabel.trim() },
+                        { onSuccess: () => setNewIncomeTypeLabel('') },
+                      )
+                    }
+                    disabled={isBusy || !newIncomeTypeLabel.trim()}
                   >
                     {t('buttonAdd')}
                   </Button>

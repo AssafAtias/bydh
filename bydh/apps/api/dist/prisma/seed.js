@@ -14,6 +14,7 @@ async function main() {
     await prisma.incomeSource.deleteMany();
     await prisma.familyProfile.deleteMany();
     await prisma.appUser.deleteMany();
+    await prisma.incomeType.deleteMany();
     await prisma.expenseType.deleteMany();
     await prisma.buildCostItem.deleteMany();
     await prisma.houseType.deleteMany();
@@ -63,6 +64,11 @@ async function main() {
             { code: 'DUPLEX_UTILITY', stage: 'Closeout', name: 'Utility connections', amountIls: 42000, order: 5, houseTypeId: duplex.id },
         ],
     });
+    const [salaryIncomeType, freelanceIncomeType, rentalIncomeType] = await Promise.all([
+        prisma.incomeType.create({ data: { key: 'salary', label: 'Salary' } }),
+        prisma.incomeType.create({ data: { key: 'freelance', label: 'Freelance' } }),
+        prisma.incomeType.create({ data: { key: 'rental', label: 'Rental' } }),
+    ]);
     const [livingType, loanType, childType] = await Promise.all([
         prisma.expenseType.create({ data: { key: 'living', label: 'Living Expenses' } }),
         prisma.expenseType.create({ data: { key: 'debt', label: 'Debt / Loans' } }),
@@ -85,8 +91,34 @@ async function main() {
     });
     await prisma.incomeSource.createMany({
         data: [
-            { name: 'Asaf salary', monthlyIls: 23800, type: 'salary', familyId: family.id },
-            { name: 'Talia salary', monthlyIls: 13000, type: 'salary', familyId: family.id },
+            {
+                name: 'Asaf salary',
+                monthlyIls: 23800,
+                type: salaryIncomeType.label,
+                typeId: salaryIncomeType.id,
+                familyId: family.id,
+            },
+            {
+                name: 'Talia salary',
+                monthlyIls: 13000,
+                type: salaryIncomeType.label,
+                typeId: salaryIncomeType.id,
+                familyId: family.id,
+            },
+            {
+                name: 'Side freelance',
+                monthlyIls: 2500,
+                type: freelanceIncomeType.label,
+                typeId: freelanceIncomeType.id,
+                familyId: family.id,
+            },
+            {
+                name: 'Rent income',
+                monthlyIls: 4200,
+                type: rentalIncomeType.label,
+                typeId: rentalIncomeType.id,
+                familyId: family.id,
+            },
         ],
     });
     await prisma.investment.createMany({
@@ -112,6 +144,7 @@ async function main() {
                 equityIls: 3200000,
                 mortgageIls: 1640000,
                 monthlyPayIls: 9840,
+                familyId: family.id,
             },
             {
                 key: 'good',
@@ -120,6 +153,7 @@ async function main() {
                 equityIls: 3300000,
                 mortgageIls: 2171000,
                 monthlyPayIls: 13026,
+                familyId: family.id,
             },
             {
                 key: 'stress',
@@ -128,6 +162,7 @@ async function main() {
                 equityIls: 3100000,
                 mortgageIls: 2995500,
                 monthlyPayIls: 17973,
+                familyId: family.id,
             },
         ],
     });
