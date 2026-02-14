@@ -3,6 +3,8 @@ import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import cors from 'cors';
 import express from 'express';
+import swaggerUi from 'swagger-ui-express';
+import { openApiDocument } from './docs/openapi.js';
 import { authRouter } from './routes/auth.js';
 import { dashboardRouter } from './routes/dashboard.js';
 const workspaceEnvPath = path.resolve(process.cwd(), 'apps/api/.env');
@@ -27,13 +29,23 @@ if (process.env.NODE_ENV === 'production' && !jwtSecret) {
 if (process.env.NODE_ENV !== 'production' && !jwtSecret) {
     console.warn('JWT_SECRET is missing. Falling back to development-only secret.');
 }
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') ?? '*' }));
+const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()).filter(Boolean);
+app.use(cors({
+    origin: corsOrigins?.length ? corsOrigins : '*',
+}));
 app.use(express.json());
 app.get('/health', (_req, res) => {
     res.json({ ok: true });
 });
+app.get('/api/health', (_req, res) => {
+    res.json({ ok: true });
+});
 app.use('/api/auth', authRouter);
 app.use('/api', dashboardRouter);
+app.get('/docs/openapi.json', (_req, res) => {
+    res.json(openApiDocument);
+});
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument));
 app.listen(port, () => {
     console.log(`API listening on http://localhost:${port}`);
 });

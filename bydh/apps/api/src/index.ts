@@ -3,6 +3,8 @@ import path from 'node:path'
 import { config as loadEnv } from 'dotenv'
 import cors from 'cors'
 import express from 'express'
+import swaggerUi from 'swagger-ui-express'
+import { openApiDocument } from './docs/openapi.js'
 import { authRouter } from './routes/auth.js'
 import { dashboardRouter } from './routes/dashboard.js'
 
@@ -48,9 +50,16 @@ app.use(express.json())
 app.get('/health', (_req, res) => {
   res.json({ ok: true })
 })
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true })
+})
 
 app.use('/api/auth', authRouter)
 app.use('/api', dashboardRouter)
+app.get('/docs/openapi.json', (_req, res) => {
+  res.json(openApiDocument)
+})
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument))
 
 app.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`)
