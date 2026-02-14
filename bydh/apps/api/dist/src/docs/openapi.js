@@ -253,7 +253,6 @@ export const openApiDocument = {
                 parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
                 responses: {
                     204: { description: 'Income type deleted' },
-                    400: { description: 'Type is in use' },
                     404: { description: 'Income type not found' },
                 },
             },

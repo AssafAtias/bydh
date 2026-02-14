@@ -459,12 +459,15 @@ router.delete('/finances/income-types/:id', async (req, res) => {
     res.status(404).json({ message: 'Income type not found.' })
     return
   }
-  if (existing._count.items > 0) {
-    res.status(400).json({ message: 'Cannot delete income type that is in use.' })
-    return
-  }
-
-  await prisma.incomeType.delete({ where: { id } })
+  await prisma.$transaction(async (tx) => {
+    if (existing._count.items > 0) {
+      await tx.incomeSource.updateMany({
+        where: { typeId: id },
+        data: { typeId: null },
+      })
+    }
+    await tx.incomeType.delete({ where: { id } })
+  })
   res.status(204).send()
 })
 
