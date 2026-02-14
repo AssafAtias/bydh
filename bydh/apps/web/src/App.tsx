@@ -54,16 +54,17 @@ function App() {
   const [tab, setTab] = useState<(typeof menu)[number]['key']>('investments')
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' })
+  const [authToken, setAuthTokenState] = useState<string | null>(() => getAuthToken())
   const [selectedProfileId, setSelectedProfileId] = useState<string>(() => localStorage.getItem(PROFILE_STORAGE_KEY) ?? '')
   const [newProfileName, setNewProfileName] = useState('')
 
   const meQuery = useQuery({
     queryKey: ['me'],
     queryFn: getMe,
-    enabled: Boolean(getAuthToken()),
+    enabled: Boolean(authToken),
     retry: false,
   })
-  const isAuthenticated = Boolean(meQuery.data)
+  const isAuthenticated = Boolean(authToken)
 
   const profilesQuery = useQuery({
     queryKey: ['profiles'],
@@ -94,12 +95,13 @@ function App() {
   })
 
   useEffect(() => {
-    if (meQuery.isError && getAuthToken()) {
+    if (meQuery.isError && authToken) {
       clearAuthToken()
+      setAuthTokenState(null)
       localStorage.removeItem(PROFILE_STORAGE_KEY)
       setSelectedProfileId('')
     }
-  }, [meQuery.isError])
+  }, [authToken, meQuery.isError])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -133,6 +135,7 @@ function App() {
         {
           onSuccess: ({ token }) => {
             setAuthToken(token)
+            setAuthTokenState(token)
             setAuthForm((prev) => ({ ...prev, password: '' }))
             queryClient.invalidateQueries({ queryKey: ['me'] })
           },
@@ -150,6 +153,7 @@ function App() {
       {
         onSuccess: ({ token }) => {
           setAuthToken(token)
+          setAuthTokenState(token)
           setAuthForm((prev) => ({ ...prev, password: '' }))
           queryClient.invalidateQueries({ queryKey: ['me'] })
         },
@@ -159,6 +163,7 @@ function App() {
 
   const logout = () => {
     clearAuthToken()
+    setAuthTokenState(null)
     localStorage.removeItem(PROFILE_STORAGE_KEY)
     setSelectedProfileId('')
     queryClient.clear()
@@ -204,6 +209,11 @@ function App() {
             {t('appName')}
           </Typography>
           <Stack direction="row" spacing={1} ml="auto">
+            {isAuthenticated ? (
+              <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
+                {meQuery.data?.name ?? ''}
+              </Typography>
+            ) : null}
             {isAuthenticated ? (
               <Button size="small" color="inherit" onClick={logout}>
                 {t('authLogout')}

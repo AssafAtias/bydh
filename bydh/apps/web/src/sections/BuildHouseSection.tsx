@@ -3,7 +3,7 @@ import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, CardContent, Chip, Divider, Grid, IconButton, Stack, TextField, Typography } from '@mui/material'
 import { useState } from 'react'
-import { createBuildItem, deleteBuildItem, updateBuildItem } from '../api/dashboard'
+import { createBuildItem, createHouseType, deleteBuildItem, updateBuildItem } from '../api/dashboard'
 import type { HouseBuild } from '../api/dashboard'
 import { useI18n } from '../lib/i18n'
 import { toCurrency } from '../lib/format'
@@ -21,9 +21,11 @@ export function BuildHouseSection({ builds }: Props) {
   const [newItems, setNewItems] = useState<
     Record<string, { stage: string; name: string; amountIls: string; percentHint: string; notes: string; order: string }>
   >({})
+  const [newHouseType, setNewHouseType] = useState({ label: '', description: '' })
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['build'] })
   const createMutation = useMutation({ mutationFn: createBuildItem, onSuccess: refresh })
+  const createHouseTypeMutation = useMutation({ mutationFn: createHouseType, onSuccess: refresh })
   const updateMutation = useMutation({
     mutationFn: ({
       id,
@@ -35,25 +37,68 @@ export function BuildHouseSection({ builds }: Props) {
     onSuccess: refresh,
   })
   const deleteMutation = useMutation({ mutationFn: deleteBuildItem, onSuccess: refresh })
-  const isBusy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending
+  const isBusy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending || createHouseTypeMutation.isPending
 
   return (
-    <Grid container spacing={2}>
-      {builds.map((house) => (
-        <Grid key={house.id} size={{ xs: 12, lg: 6 }}>
-          <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', height: '100%' }}>
-            <CardContent>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <div>
-                  <Typography variant="h6" fontWeight={700}>
-                    {house.label}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {house.description}
-                  </Typography>
-                </div>
-                <Chip label={toCurrency(house.total)} color="primary" />
-              </Stack>
+    <Stack spacing={2}>
+      <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
+        <CardContent>
+          <Stack spacing={1.25}>
+            <Typography variant="subtitle2" fontWeight={700}>
+              {t('buildAddHouseTypeHint')}
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+              <TextField
+                size="small"
+                label={t('fieldHouseType')}
+                value={newHouseType.label}
+                onChange={(event) => setNewHouseType((prev) => ({ ...prev, label: event.target.value }))}
+              />
+              <TextField
+                size="small"
+                fullWidth
+                label={t('fieldHouseDescription')}
+                value={newHouseType.description}
+                onChange={(event) => setNewHouseType((prev) => ({ ...prev, description: event.target.value }))}
+              />
+              <Button
+                variant="contained"
+                onClick={() =>
+                  createHouseTypeMutation.mutate(
+                    {
+                      label: newHouseType.label.trim(),
+                      description: newHouseType.description.trim(),
+                    },
+                    {
+                      onSuccess: () => setNewHouseType({ label: '', description: '' }),
+                    },
+                  )
+                }
+                disabled={isBusy || !newHouseType.label.trim()}
+              >
+                {t('buttonAddHouseType')}
+              </Button>
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Grid container spacing={2}>
+        {builds.map((house) => (
+          <Grid key={house.id} size={{ xs: 12, lg: 6 }}>
+            <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+              <CardContent>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <div>
+                    <Typography variant="h6" fontWeight={700}>
+                      {house.label}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {house.description}
+                    </Typography>
+                  </div>
+                  <Chip label={toCurrency(house.total)} color="primary" />
+                </Stack>
 
               <Stack mt={2} spacing={1.25}>
                 {house.items.map((item, index) => (
@@ -365,10 +410,11 @@ export function BuildHouseSection({ builds }: Props) {
                   {t('buttonAddBuildStep')}
                 </Button>
               </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-      ))}
-    </Grid>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+    </Stack>
   )
 }

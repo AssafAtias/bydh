@@ -307,6 +307,10 @@ export async function createBuildItem(payload: {
   await api.post('/build/items', payload)
 }
 
+export async function createHouseType(payload: { label: string; description?: string }): Promise<void> {
+  await api.post('/build/types', payload)
+}
+
 export async function updateBuildItem(
   id: string,
   payload: {
