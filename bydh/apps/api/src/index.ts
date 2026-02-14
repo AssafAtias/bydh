@@ -55,6 +55,12 @@ const corsOriginPatterns = process.env.CORS_ORIGIN?.split(',')
   .map((origin) => normalizeOrigin(origin))
   .filter(Boolean)
 
+console.log(
+  `[CORS] raw=${process.env.CORS_ORIGIN ?? '<empty>'} normalized=${
+    corsOriginPatterns?.length ? corsOriginPatterns.join(',') : '<allow-all>'
+  }`,
+)
+
 app.use(
   cors({
     origin: (requestOrigin, callback) => {
@@ -67,6 +73,13 @@ app.use(
       const isAllowed = corsOriginPatterns.some((pattern) =>
         originMatchesPattern(normalizedRequestOrigin, pattern),
       )
+      if (!isAllowed) {
+        console.warn(
+          `[CORS] blocked origin=${normalizedRequestOrigin} allowed=${
+            corsOriginPatterns.length ? corsOriginPatterns.join(',') : '<allow-all>'
+          }`,
+        )
+      }
 
       callback(null, isAllowed)
     },
