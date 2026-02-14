@@ -278,28 +278,28 @@ export async function deleteExpense(id: string): Promise<void> {
   await api.delete(`/finances/expenses/${id}`)
 }
 
-export async function createExpenseType(payload: { label: string }): Promise<void> {
+export async function createExpenseType(payload: { label: string; profileId: string }): Promise<void> {
   await api.post('/finances/expense-types', payload)
 }
 
-export async function updateExpenseType(id: string, payload: { label: string }): Promise<void> {
-  await api.patch(`/finances/expense-types/${id}`, payload)
+export async function updateExpenseType(id: string, payload: { label: string; profileId: string }): Promise<void> {
+  await api.patch(`/finances/expense-types/${id}`, payload, { params: { profileId: payload.profileId } })
 }
 
-export async function deleteExpenseType(id: string): Promise<void> {
-  await api.delete(`/finances/expense-types/${id}`)
+export async function deleteExpenseType(id: string, profileId: string): Promise<void> {
+  await api.delete(`/finances/expense-types/${id}`, { params: { profileId } })
 }
 
-export async function createIncomeType(payload: { label: string }): Promise<void> {
+export async function createIncomeType(payload: { label: string; profileId: string }): Promise<void> {
   await api.post('/finances/income-types', payload)
 }
 
-export async function updateIncomeType(id: string, payload: { label: string }): Promise<void> {
-  await api.patch(`/finances/income-types/${id}`, payload)
+export async function updateIncomeType(id: string, payload: { label: string; profileId: string }): Promise<void> {
+  await api.patch(`/finances/income-types/${id}`, payload, { params: { profileId: payload.profileId } })
 }
 
-export async function deleteIncomeType(id: string): Promise<void> {
-  await api.delete(`/finances/income-types/${id}`)
+export async function deleteIncomeType(id: string, profileId: string): Promise<void> {
+  await api.delete(`/finances/income-types/${id}`, { params: { profileId } })
 }
 
 export async function createBuildItem(payload: {

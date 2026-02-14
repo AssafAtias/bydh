@@ -22,18 +22,6 @@ async function main() {
   await prisma.buildCostItem.deleteMany()
   await prisma.houseType.deleteMany()
 
-  const [salaryIncomeType, freelanceIncomeType, rentalIncomeType] = await Promise.all([
-    prisma.incomeType.create({ data: { key: 'salary', label: 'Salary' } }),
-    prisma.incomeType.create({ data: { key: 'freelance', label: 'Freelance' } }),
-    prisma.incomeType.create({ data: { key: 'rental', label: 'Rental' } }),
-  ])
-
-  const [livingType, loanType, childType] = await Promise.all([
-    prisma.expenseType.create({ data: { key: 'living', label: 'Living Expenses' } }),
-    prisma.expenseType.create({ data: { key: 'debt', label: 'Debt / Loans' } }),
-    prisma.expenseType.create({ data: { key: 'children', label: 'Children / Education' } }),
-  ])
-
   const defaultUser = await prisma.appUser.create({
     data: {
       name: 'Default User',
@@ -50,6 +38,60 @@ async function main() {
       ownerUserId: defaultUser.id,
     },
   })
+
+  const [salaryIncomeType, freelanceIncomeType, rentalIncomeType] = await Promise.all([
+    prisma.incomeType.create({
+      data: {
+        key: 'salary',
+        label: 'Salary',
+        ownerUserId: defaultUser.id,
+        familyId: family.id,
+      },
+    }),
+    prisma.incomeType.create({
+      data: {
+        key: 'freelance',
+        label: 'Freelance',
+        ownerUserId: defaultUser.id,
+        familyId: family.id,
+      },
+    }),
+    prisma.incomeType.create({
+      data: {
+        key: 'rental',
+        label: 'Rental',
+        ownerUserId: defaultUser.id,
+        familyId: family.id,
+      },
+    }),
+  ])
+
+  const [livingType, loanType, childType] = await Promise.all([
+    prisma.expenseType.create({
+      data: {
+        key: 'living',
+        label: 'Living Expenses',
+        ownerUserId: defaultUser.id,
+        familyId: family.id,
+      },
+    }),
+    prisma.expenseType.create({
+      data: {
+        key: 'debt',
+        label: 'Debt / Loans',
+        ownerUserId: defaultUser.id,
+        familyId: family.id,
+      },
+    }),
+    prisma.expenseType.create({
+      data: {
+        key: 'children',
+        label: 'Children / Education',
+        ownerUserId: defaultUser.id,
+        familyId: family.id,
+      },
+    }),
+  ])
 
   await prisma.incomeSource.createMany({
     data: [

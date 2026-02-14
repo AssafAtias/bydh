@@ -36,9 +36,15 @@ model ExpenseType {
   id        String         @id @default(cuid())
   key       String         @unique
   label     String
+  ownerUserId String
+  ownerUser AppUser        @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  familyId  String
+  family    FamilyProfile  @relation(fields: [familyId], references: [id], onDelete: Cascade)
   items     FamilyExpense[]
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
+
+  @@index([ownerUserId, familyId])
 }
 
 model AppUser {
@@ -48,6 +54,8 @@ model AppUser {
   name         String?
   passwordHash String?
   profiles     FamilyProfile[]
+  incomeTypes  IncomeType[]
+  expenseTypes ExpenseType[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 }
@@ -62,6 +70,8 @@ model FamilyProfile {
   incomes     IncomeSource[]
   investments Investment[]
   expenses    FamilyExpense[]
+  incomeTypes IncomeType[]
+  expenseTypes ExpenseType[]
   scenarios   Scenario[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
@@ -86,9 +96,15 @@ model IncomeType {
   id        String         @id @default(cuid())
   key       String         @unique
   label     String
+  ownerUserId String
+  ownerUser AppUser        @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  familyId  String
+  family    FamilyProfile  @relation(fields: [familyId], references: [id], onDelete: Cascade)
   items     IncomeSource[]
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
+
+  @@index([ownerUserId, familyId])
 }
 
 model Investment {

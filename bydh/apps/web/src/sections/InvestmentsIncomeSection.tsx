@@ -57,10 +57,13 @@ export function InvestmentsIncomeSection({ finance, profileId }: Props) {
   const deleteIncomeMutation = useMutation({ mutationFn: deleteIncome, onSuccess: refresh })
   const createIncomeTypeMutation = useMutation({ mutationFn: createIncomeType, onSuccess: refresh })
   const updateIncomeTypeMutation = useMutation({
-    mutationFn: ({ id, label }: { id: string; label: string }) => updateIncomeType(id, { label }),
+    mutationFn: ({ id, label }: { id: string; label: string }) => updateIncomeType(id, { label, profileId }),
     onSuccess: refresh,
   })
-  const deleteIncomeTypeMutation = useMutation({ mutationFn: deleteIncomeType, onSuccess: refresh })
+  const deleteIncomeTypeMutation = useMutation({
+    mutationFn: (id: string) => deleteIncomeType(id, profileId),
+    onSuccess: refresh,
+  })
 
   const createInvestmentMutation = useMutation({ mutationFn: createInvestment, onSuccess: refresh })
   const updateInvestmentMutation = useMutation({
@@ -290,7 +293,7 @@ export function InvestmentsIncomeSection({ finance, profileId }: Props) {
                     variant="contained"
                     onClick={() =>
                       createIncomeTypeMutation.mutate(
-                        { label: newIncomeTypeLabel.trim() },
+                        { label: newIncomeTypeLabel.trim(), profileId },
                         { onSuccess: () => setNewIncomeTypeLabel('') },
                       )
                     }
