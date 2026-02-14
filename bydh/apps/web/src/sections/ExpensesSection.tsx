@@ -35,10 +35,13 @@ export function ExpensesSection({ finance, profileId }: Props) {
   const deleteMutation = useMutation({ mutationFn: deleteExpense, onSuccess: refresh })
   const createTypeMutation = useMutation({ mutationFn: createExpenseType, onSuccess: refresh })
   const updateTypeMutation = useMutation({
-    mutationFn: ({ id, label }: { id: string; label: string }) => updateExpenseType(id, { label }),
+    mutationFn: ({ id, label }: { id: string; label: string }) => updateExpenseType(id, { label, profileId }),
     onSuccess: refresh,
   })
-  const deleteTypeMutation = useMutation({ mutationFn: deleteExpenseType, onSuccess: refresh })
+  const deleteTypeMutation = useMutation({
+    mutationFn: (id: string) => deleteExpenseType(id, profileId),
+    onSuccess: refresh,
+  })
   const isBusy =
     createMutation.isPending ||
     updateMutation.isPending ||
@@ -230,7 +233,7 @@ export function ExpensesSection({ finance, profileId }: Props) {
             <Button
               variant="contained"
               onClick={() =>
-                createTypeMutation.mutate({ label: newTypeLabel.trim() }, { onSuccess: () => setNewTypeLabel('') })
+                createTypeMutation.mutate({ label: newTypeLabel.trim(), profileId }, { onSuccess: () => setNewTypeLabel('') })
               }
               disabled={isBusy || !newTypeLabel.trim()}
             >

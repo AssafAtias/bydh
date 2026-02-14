@@ -207,8 +207,20 @@ router.get('/finances', async (req, res) => {
     const monthlyExpenses = family.expenses.reduce((sum, expense) => sum + asNumber(expense.monthlyIls), 0);
     const netMonthly = monthlyIncome - monthlyExpenses;
     const investmentsTotal = family.investments.reduce((sum, item) => sum + asNumber(item.currentValueIls), 0);
-    const expenseTypes = await prisma.expenseType.findMany({ orderBy: { label: 'asc' } });
-    const incomeTypes = await prisma.incomeType.findMany({ orderBy: { label: 'asc' } });
+    const expenseTypes = await prisma.expenseType.findMany({
+        where: {
+            ownerUserId: userId,
+            familyId: resolvedFamilyId,
+        },
+        orderBy: { label: 'asc' },
+    });
+    const incomeTypes = await prisma.incomeType.findMany({
+        where: {
+            ownerUserId: userId,
+            familyId: resolvedFamilyId,
+        },
+        orderBy: { label: 'asc' },
+    });
     res.json({
         id: family.id,
         key: family.key,
@@ -254,8 +266,23 @@ router.get('/finances', async (req, res) => {
         })),
     });
 });
-router.get('/finances/income-types', async (_req, res) => {
-    const types = await prisma.incomeType.findMany({ orderBy: { label: 'asc' } });
+router.get('/finances/income-types', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
+    const familyId = await resolveRequestedFamilyId(userId, req.query.profileId);
+    if (!familyId) {
+        res.status(404).json({ message: 'Family profile not found.' });
+        return;
+    }
+    const types = await prisma.incomeType.findMany({
+        where: {
+            ownerUserId: userId,
+            familyId,
+        },
+        orderBy: { label: 'asc' },
+    });
     res.json(types.map((type) => ({
         id: type.id,
         key: type.key,
@@ -263,13 +290,26 @@ router.get('/finances/income-types', async (_req, res) => {
     })));
 });
 router.post('/finances/income-types', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const label = asString(req.body?.label);
     if (!hasValue(label)) {
         res.status(400).json({ message: 'label is required.' });
         return;
     }
+    const familyId = await resolveRequestedFamilyId(userId, req.body?.profileId ?? req.body?.familyId);
+    if (!familyId) {
+        res.status(404).json({ message: 'Family profile not found.' });
+        return;
+    }
     const existing = await prisma.incomeType.findFirst({
-        where: { label: { equals: label, mode: 'insensitive' } },
+        where: {
+            ownerUserId: userId,
+            familyId,
+            label: { equals: label, mode: 'insensitive' },
+        },
     });
     if (existing) {
         res.status(409).json({ message: 'Income type already exists.' });
@@ -279,6 +319,8 @@ router.post('/finances/income-types', async (req, res) => {
         data: {
             key: makeTypeKey('income', label),
             label,
+            ownerUserId: userId,
+            familyId,
         },
     });
     res.status(201).json({
@@ -288,13 +330,28 @@ router.post('/finances/income-types', async (req, res) => {
     });
 });
 router.patch('/finances/income-types/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
     const label = asString(req.body?.label);
     if (!hasValue(label)) {
         res.status(400).json({ message: 'label is required.' });
         return;
     }
-    const existing = await prisma.incomeType.findUnique({ where: { id } });
+    const familyId = await resolveRequestedFamilyId(userId, req.body?.profileId ?? req.query.profileId);
+    if (!familyId) {
+        res.status(404).json({ message: 'Family profile not found.' });
+        return;
+    }
+    const existing = await prisma.incomeType.findFirst({
+        where: {
+            id,
+            ownerUserId: userId,
+            familyId,
+        },
+    });
     if (!existing) {
         res.status(404).json({ message: 'Income type not found.' });
         return;
@@ -302,6 +359,8 @@ router.patch('/finances/income-types/:id', async (req, res) => {
     const duplicate = await prisma.incomeType.findFirst({
         where: {
             id: { not: id },
+            ownerUserId: userId,
+            familyId,
             label: { equals: label, mode: 'insensitive' },
         },
     });
@@ -324,30 +383,60 @@ router.patch('/finances/income-types/:id', async (req, res) => {
     });
 });
 router.delete('/finances/income-types/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
-    const existing = await prisma.incomeType.findUnique({
-        where: { id },
+    const familyId = await resolveRequestedFamilyId(userId, req.body?.profileId ?? req.query.profileId);
+    if (!familyId) {
+        res.status(404).json({ message: 'Family profile not found.' });
+        return;
+    }
+    const existing = await prisma.incomeType.findFirst({
+        where: {
+            id,
+            ownerUserId: userId,
+            familyId,
+        },
         include: { _count: { select: { items: true } } },
     });
     if (!existing) {
         res.status(404).json({ message: 'Income type not found.' });
         return;
     }
-    if (existing._count.items > 0) {
-        res.status(400).json({ message: 'Cannot delete income type that is in use.' });
-        return;
-    }
-    await prisma.incomeType.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+        if (existing._count.items > 0) {
+            await tx.incomeSource.updateMany({
+                where: { typeId: id },
+                data: { typeId: null },
+            });
+        }
+        await tx.incomeType.delete({ where: { id } });
+    });
     res.status(204).send();
 });
 router.post('/finances/expense-types', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const label = asString(req.body?.label);
     if (!hasValue(label)) {
         res.status(400).json({ message: 'label is required.' });
         return;
     }
+    const familyId = await resolveRequestedFamilyId(userId, req.body?.profileId ?? req.body?.familyId);
+    if (!familyId) {
+        res.status(404).json({ message: 'Family profile not found.' });
+        return;
+    }
     const existing = await prisma.expenseType.findFirst({
-        where: { label: { equals: label, mode: 'insensitive' } },
+        where: {
+            ownerUserId: userId,
+            familyId,
+            label: { equals: label, mode: 'insensitive' },
+        },
     });
     if (existing) {
         res.status(409).json({ message: 'Expense type already exists.' });
@@ -357,6 +446,8 @@ router.post('/finances/expense-types', async (req, res) => {
         data: {
             key: makeTypeKey('expense', label),
             label,
+            ownerUserId: userId,
+            familyId,
         },
     });
     res.status(201).json({
@@ -366,13 +457,28 @@ router.post('/finances/expense-types', async (req, res) => {
     });
 });
 router.patch('/finances/expense-types/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
     const label = asString(req.body?.label);
     if (!hasValue(label)) {
         res.status(400).json({ message: 'label is required.' });
         return;
     }
-    const existing = await prisma.expenseType.findUnique({ where: { id } });
+    const familyId = await resolveRequestedFamilyId(userId, req.body?.profileId ?? req.query.profileId);
+    if (!familyId) {
+        res.status(404).json({ message: 'Family profile not found.' });
+        return;
+    }
+    const existing = await prisma.expenseType.findFirst({
+        where: {
+            id,
+            ownerUserId: userId,
+            familyId,
+        },
+    });
     if (!existing) {
         res.status(404).json({ message: 'Expense type not found.' });
         return;
@@ -380,6 +486,8 @@ router.patch('/finances/expense-types/:id', async (req, res) => {
     const duplicate = await prisma.expenseType.findFirst({
         where: {
             id: { not: id },
+            ownerUserId: userId,
+            familyId,
             label: { equals: label, mode: 'insensitive' },
         },
     });
@@ -398,9 +506,22 @@ router.patch('/finances/expense-types/:id', async (req, res) => {
     });
 });
 router.delete('/finances/expense-types/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
-    const existing = await prisma.expenseType.findUnique({
-        where: { id },
+    const familyId = await resolveRequestedFamilyId(userId, req.body?.profileId ?? req.query.profileId);
+    if (!familyId) {
+        res.status(404).json({ message: 'Family profile not found.' });
+        return;
+    }
+    const existing = await prisma.expenseType.findFirst({
+        where: {
+            id,
+            ownerUserId: userId,
+            familyId,
+        },
         include: { _count: { select: { items: true } } },
     });
     if (!existing) {
@@ -436,7 +557,13 @@ router.post('/finances/incomes', async (req, res) => {
     let resolvedTypeId = typeId;
     let resolvedTypeLabel = type;
     if (hasValue(resolvedTypeId)) {
-        const selectedType = await prisma.incomeType.findUnique({ where: { id: resolvedTypeId } });
+        const selectedType = await prisma.incomeType.findFirst({
+            where: {
+                id: resolvedTypeId,
+                ownerUserId: userId,
+                familyId,
+            },
+        });
         if (!selectedType) {
             res.status(400).json({ message: 'Invalid income type.' });
             return;
@@ -446,7 +573,11 @@ router.post('/finances/incomes', async (req, res) => {
     else {
         const normalizedLabel = hasValue(typeLabel) ? typeLabel : type;
         const existingType = await prisma.incomeType.findFirst({
-            where: { label: { equals: normalizedLabel, mode: 'insensitive' } },
+            where: {
+                ownerUserId: userId,
+                familyId,
+                label: { equals: normalizedLabel, mode: 'insensitive' },
+            },
             select: { id: true, label: true },
         });
         if (existingType) {
@@ -455,7 +586,12 @@ router.post('/finances/incomes', async (req, res) => {
         }
         else {
             const createdType = await prisma.incomeType.create({
-                data: { key: makeTypeKey('income', normalizedLabel), label: normalizedLabel },
+                data: {
+                    key: makeTypeKey('income', normalizedLabel),
+                    label: normalizedLabel,
+                    ownerUserId: userId,
+                    familyId,
+                },
             });
             resolvedTypeId = createdType.id;
             resolvedTypeLabel = createdType.label;
@@ -499,7 +635,13 @@ router.patch('/finances/incomes/:id', async (req, res) => {
     let resolvedTypeId = existing.typeId ?? null;
     let resolvedTypeLabel = existing.type;
     if (hasValue(typeId)) {
-        const selectedType = await prisma.incomeType.findUnique({ where: { id: typeId } });
+        const selectedType = await prisma.incomeType.findFirst({
+            where: {
+                id: typeId,
+                ownerUserId: userId,
+                familyId: existing.familyId,
+            },
+        });
         if (!selectedType) {
             res.status(400).json({ message: 'Invalid income type.' });
             return;
@@ -510,7 +652,11 @@ router.patch('/finances/incomes/:id', async (req, res) => {
     else if (hasValue(typeLabel) || hasValue(type)) {
         const normalizedLabel = hasValue(typeLabel) ? typeLabel : type;
         const existingType = await prisma.incomeType.findFirst({
-            where: { label: { equals: normalizedLabel, mode: 'insensitive' } },
+            where: {
+                ownerUserId: userId,
+                familyId: existing.familyId,
+                label: { equals: normalizedLabel, mode: 'insensitive' },
+            },
             select: { id: true, label: true },
         });
         if (existingType) {
@@ -519,7 +665,12 @@ router.patch('/finances/incomes/:id', async (req, res) => {
         }
         else {
             const createdType = await prisma.incomeType.create({
-                data: { key: makeTypeKey('income', normalizedLabel), label: normalizedLabel },
+                data: {
+                    key: makeTypeKey('income', normalizedLabel),
+                    label: normalizedLabel,
+                    ownerUserId: userId,
+                    familyId: existing.familyId,
+                },
             });
             resolvedTypeId = createdType.id;
             resolvedTypeLabel = createdType.label;
@@ -686,9 +837,27 @@ router.post('/finances/expenses', async (req, res) => {
         return;
     }
     let resolvedTypeId = typeId;
-    if (!hasValue(resolvedTypeId) && hasValue(typeLabel)) {
+    if (hasValue(resolvedTypeId)) {
+        const selectedType = await prisma.expenseType.findFirst({
+            where: {
+                id: resolvedTypeId,
+                ownerUserId: userId,
+                familyId,
+            },
+            select: { id: true },
+        });
+        if (!selectedType) {
+            res.status(400).json({ message: 'Invalid expense type.' });
+            return;
+        }
+    }
+    else if (hasValue(typeLabel)) {
         const existingType = await prisma.expenseType.findFirst({
-            where: { label: { equals: typeLabel, mode: 'insensitive' } },
+            where: {
+                ownerUserId: userId,
+                familyId,
+                label: { equals: typeLabel, mode: 'insensitive' },
+            },
             select: { id: true },
         });
         if (existingType) {
@@ -696,7 +865,12 @@ router.post('/finances/expenses', async (req, res) => {
         }
         else {
             const createdType = await prisma.expenseType.create({
-                data: { key: `type_${Date.now()}`, label: typeLabel },
+                data: {
+                    key: makeTypeKey('expense', typeLabel),
+                    label: typeLabel,
+                    ownerUserId: userId,
+                    familyId,
+                },
             });
             resolvedTypeId = createdType.id;
         }
@@ -736,9 +910,27 @@ router.patch('/finances/expenses/:id', async (req, res) => {
     const typeId = asString(req.body?.typeId);
     const typeLabel = asString(req.body?.typeLabel);
     let resolvedTypeId = hasValue(typeId) ? typeId : existing.typeId;
-    if (!hasValue(typeId) && hasValue(typeLabel)) {
+    if (hasValue(typeId)) {
+        const selectedType = await prisma.expenseType.findFirst({
+            where: {
+                id: typeId,
+                ownerUserId: userId,
+                familyId: existing.familyId,
+            },
+            select: { id: true },
+        });
+        if (!selectedType) {
+            res.status(400).json({ message: 'Invalid expense type.' });
+            return;
+        }
+    }
+    else if (hasValue(typeLabel)) {
         const existingType = await prisma.expenseType.findFirst({
-            where: { label: { equals: typeLabel, mode: 'insensitive' } },
+            where: {
+                ownerUserId: userId,
+                familyId: existing.familyId,
+                label: { equals: typeLabel, mode: 'insensitive' },
+            },
             select: { id: true },
         });
         if (existingType) {
@@ -746,7 +938,12 @@ router.patch('/finances/expenses/:id', async (req, res) => {
         }
         else {
             const createdType = await prisma.expenseType.create({
-                data: { key: `type_${Date.now()}`, label: typeLabel },
+                data: {
+                    key: makeTypeKey('expense', typeLabel),
+                    label: typeLabel,
+                    ownerUserId: userId,
+                    familyId: existing.familyId,
+                },
             });
             resolvedTypeId = createdType.id;
         }

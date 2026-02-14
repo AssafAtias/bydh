@@ -114,8 +114,15 @@ export type FamilyProfile = z.infer<typeof profileSchema>
 export type AuthUser = z.infer<typeof authUserSchema>
 export type FinanceType = FamilyFinance['expenseTypes'][number]
 
+const apiBaseUrl =
+  import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4010/api' : undefined)
+
+if (!apiBaseUrl) {
+  throw new Error('VITE_API_URL is required in production')
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:4010/api',
+  baseURL: apiBaseUrl,
 })
 
 api.interceptors.request.use((config) => {
@@ -271,28 +278,28 @@ export async function deleteExpense(id: string): Promise<void> {
   await api.delete(`/finances/expenses/${id}`)
 }
 
-export async function createExpenseType(payload: { label: string }): Promise<void> {
+export async function createExpenseType(payload: { label: string; profileId: string }): Promise<void> {
   await api.post('/finances/expense-types', payload)
 }
 
-export async function updateExpenseType(id: string, payload: { label: string }): Promise<void> {
-  await api.patch(`/finances/expense-types/${id}`, payload)
+export async function updateExpenseType(id: string, payload: { label: string; profileId: string }): Promise<void> {
+  await api.patch(`/finances/expense-types/${id}`, payload, { params: { profileId: payload.profileId } })
 }
 
-export async function deleteExpenseType(id: string): Promise<void> {
-  await api.delete(`/finances/expense-types/${id}`)
+export async function deleteExpenseType(id: string, profileId: string): Promise<void> {
+  await api.delete(`/finances/expense-types/${id}`, { params: { profileId } })
 }
 
-export async function createIncomeType(payload: { label: string }): Promise<void> {
+export async function createIncomeType(payload: { label: string; profileId: string }): Promise<void> {
   await api.post('/finances/income-types', payload)
 }
 
-export async function updateIncomeType(id: string, payload: { label: string }): Promise<void> {
-  await api.patch(`/finances/income-types/${id}`, payload)
+export async function updateIncomeType(id: string, payload: { label: string; profileId: string }): Promise<void> {
+  await api.patch(`/finances/income-types/${id}`, payload, { params: { profileId: payload.profileId } })
 }
 
-export async function deleteIncomeType(id: string): Promise<void> {
-  await api.delete(`/finances/income-types/${id}`)
+export async function deleteIncomeType(id: string, profileId: string): Promise<void> {
+  await api.delete(`/finances/income-types/${id}`, { params: { profileId } })
 }
 
 export async function createBuildItem(payload: {
