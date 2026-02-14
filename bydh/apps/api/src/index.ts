@@ -38,11 +38,38 @@ if (process.env.NODE_ENV !== 'production' && !jwtSecret) {
   console.warn('JWT_SECRET is missing. Falling back to development-only secret.')
 }
 
-const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()).filter(Boolean)
+function normalizeOrigin(origin: string): string {
+  return origin.trim().replace(/^['"]|['"]$/g, '').replace(/\/$/, '')
+}
+
+function originMatchesPattern(origin: string, pattern: string): boolean {
+  if (!pattern.includes('*')) {
+    return origin === pattern
+  }
+
+  const escapedPattern = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+  return new RegExp(`^${escapedPattern}$`).test(origin)
+}
+
+const corsOriginPatterns = process.env.CORS_ORIGIN?.split(',')
+  .map((origin) => normalizeOrigin(origin))
+  .filter(Boolean)
 
 app.use(
   cors({
-    origin: corsOrigins?.length ? corsOrigins : '*',
+    origin: (requestOrigin, callback) => {
+      if (!requestOrigin || !corsOriginPatterns?.length) {
+        callback(null, true)
+        return
+      }
+
+      const normalizedRequestOrigin = normalizeOrigin(requestOrigin)
+      const isAllowed = corsOriginPatterns.some((pattern) =>
+        originMatchesPattern(normalizedRequestOrigin, pattern),
+      )
+
+      callback(null, isAllowed)
+    },
   }),
 )
 app.use(express.json())
