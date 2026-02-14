@@ -39,6 +39,11 @@ function originMatchesPattern(origin, pattern) {
     const escapedPattern = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
     return new RegExp(`^${escapedPattern}$`).test(origin);
 }
+function isTrustedVercelPreviewOrigin(origin) {
+    // Allow project preview deployments like:
+    // https://bydh-rdiujttff-assafs-projects-b866d634.vercel.app
+    return /^https:\/\/bydh-[a-z0-9-]+\.vercel\.app$/i.test(origin);
+}
 const corsOriginPatterns = process.env.CORS_ORIGIN?.split(',')
     .map((origin) => normalizeOrigin(origin))
     .filter(Boolean);
@@ -50,9 +55,12 @@ app.use(cors({
             return;
         }
         const normalizedRequestOrigin = normalizeOrigin(requestOrigin);
-        const isAllowed = corsOriginPatterns.some((pattern) => originMatchesPattern(normalizedRequestOrigin, pattern));
+        const isAllowed = corsOriginPatterns.some((pattern) => originMatchesPattern(normalizedRequestOrigin, pattern)) ||
+            isTrustedVercelPreviewOrigin(normalizedRequestOrigin);
         if (!isAllowed) {
-            console.warn(`[CORS] blocked origin=${normalizedRequestOrigin} allowed=${corsOriginPatterns.length ? corsOriginPatterns.join(',') : '<allow-all>'}`);
+            console.warn(`[CORS] blocked origin=${normalizedRequestOrigin} allowed=${corsOriginPatterns.length
+                ? `${corsOriginPatterns.join(',')},https://bydh-*.vercel.app`
+                : '<allow-all>'}`);
         }
         callback(null, isAllowed);
     },
