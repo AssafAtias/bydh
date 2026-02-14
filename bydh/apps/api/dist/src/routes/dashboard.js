@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getUserIdFromRequest } from '../lib/auth.js';
 import { prisma } from '../lib/prisma.js';
 const router = Router();
 const asNumber = (value) => Number(value ?? 0);
@@ -11,9 +12,45 @@ const asOptionalNumber = (value) => {
 };
 const asString = (value) => String(value ?? '').trim();
 const hasValue = (value) => value.length > 0;
-const getDefaultFamilyId = async () => {
-    const family = await prisma.familyProfile.findFirst({ select: { id: true } });
+const makeProfileKey = () => `profile_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const resolveCurrentUserId = async (req, res) => {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) {
+        res.status(401).json({ message: 'Unauthorized.' });
+        return null;
+    }
+    const user = await prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { id: true },
+    });
+    if (!user) {
+        res.status(401).json({ message: 'Unauthorized.' });
+        return null;
+    }
+    return user.id;
+};
+const getDefaultFamilyId = async (userId) => {
+    const family = await prisma.familyProfile.findFirst({
+        where: { ownerUserId: userId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+    });
     return family?.id ?? null;
+};
+const resolveRequestedFamilyId = async (userId, rawProfileId) => {
+    const providedProfileId = asString(rawProfileId);
+    const profileId = hasValue(providedProfileId) ? providedProfileId : await getDefaultFamilyId(userId);
+    if (!profileId) {
+        return null;
+    }
+    const profile = await prisma.familyProfile.findFirst({
+        where: {
+            id: profileId,
+            ownerUserId: userId,
+        },
+        select: { id: true },
+    });
+    return profile?.id ?? null;
 };
 router.get('/build', async (_req, res) => {
     const [houseTypes, items] = await Promise.all([
@@ -42,8 +79,79 @@ router.get('/build', async (_req, res) => {
     });
     res.json(grouped);
 });
-router.get('/finances', async (_req, res) => {
+router.get('/profiles', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
+    const profiles = await prisma.familyProfile.findMany({
+        where: { ownerUserId: userId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+            id: true,
+            key: true,
+            familyName: true,
+            monthlyGoal: true,
+            createdAt: true,
+        },
+    });
+    res.json(profiles.map((profile) => ({
+        id: profile.id,
+        key: profile.key,
+        familyName: profile.familyName,
+        monthlyGoal: profile.monthlyGoal ? asNumber(profile.monthlyGoal) : null,
+        createdAt: profile.createdAt.toISOString(),
+    })));
+});
+router.post('/profiles', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
+    const familyName = asString(req.body?.familyName);
+    const monthlyGoal = asOptionalNumber(req.body?.monthlyGoal);
+    if (!hasValue(familyName)) {
+        res.status(400).json({ message: 'familyName is required.' });
+        return;
+    }
+    const profile = await prisma.familyProfile.create({
+        data: {
+            key: makeProfileKey(),
+            familyName,
+            monthlyGoal,
+            ownerUserId: userId,
+        },
+        select: {
+            id: true,
+            key: true,
+            familyName: true,
+            monthlyGoal: true,
+            createdAt: true,
+        },
+    });
+    res.status(201).json({
+        id: profile.id,
+        key: profile.key,
+        familyName: profile.familyName,
+        monthlyGoal: profile.monthlyGoal ? asNumber(profile.monthlyGoal) : null,
+        createdAt: profile.createdAt.toISOString(),
+    });
+});
+router.get('/finances', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
+    const resolvedFamilyId = await resolveRequestedFamilyId(userId, req.query.profileId);
+    if (!resolvedFamilyId) {
+        res.status(404).json({ message: 'Family profile not found.' });
+        return;
+    }
     const family = await prisma.familyProfile.findFirst({
+        where: {
+            id: resolvedFamilyId,
+            ownerUserId: userId,
+        },
         include: {
             incomes: true,
             investments: true,
@@ -99,6 +207,10 @@ router.get('/finances', async (_req, res) => {
     });
 });
 router.post('/finances/incomes', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const name = asString(req.body?.name);
     const type = asString(req.body?.type) || 'salary';
     const monthlyIls = asOptionalNumber(req.body?.monthlyIls);
@@ -106,7 +218,7 @@ router.post('/finances/incomes', async (req, res) => {
         res.status(400).json({ message: 'name and monthlyIls are required.' });
         return;
     }
-    const familyId = asString(req.body?.familyId) || (await getDefaultFamilyId());
+    const familyId = await resolveRequestedFamilyId(userId, req.body?.profileId ?? req.body?.familyId);
     if (!familyId) {
         res.status(404).json({ message: 'Family profile not found.' });
         return;
@@ -122,8 +234,19 @@ router.post('/finances/incomes', async (req, res) => {
     });
 });
 router.patch('/finances/incomes/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
-    const existing = await prisma.incomeSource.findUnique({ where: { id } });
+    const existing = await prisma.incomeSource.findFirst({
+        where: {
+            id,
+            family: {
+                ownerUserId: userId,
+            },
+        },
+    });
     if (!existing) {
         res.status(404).json({ message: 'Income source not found.' });
         return;
@@ -147,11 +270,32 @@ router.patch('/finances/incomes/:id', async (req, res) => {
     });
 });
 router.delete('/finances/incomes/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
+    const existing = await prisma.incomeSource.findFirst({
+        where: {
+            id,
+            family: {
+                ownerUserId: userId,
+            },
+        },
+        select: { id: true },
+    });
+    if (!existing) {
+        res.status(404).json({ message: 'Income source not found.' });
+        return;
+    }
     await prisma.incomeSource.delete({ where: { id } });
     res.status(204).send();
 });
 router.post('/finances/investments', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const name = asString(req.body?.name);
     const accountType = asString(req.body?.accountType);
     const provider = asString(req.body?.provider);
@@ -161,7 +305,7 @@ router.post('/finances/investments', async (req, res) => {
         res.status(400).json({ message: 'name, accountType and currentValueIls are required.' });
         return;
     }
-    const familyId = asString(req.body?.familyId) || (await getDefaultFamilyId());
+    const familyId = await resolveRequestedFamilyId(userId, req.body?.profileId ?? req.body?.familyId);
     if (!familyId) {
         res.status(404).json({ message: 'Family profile not found.' });
         return;
@@ -186,8 +330,19 @@ router.post('/finances/investments', async (req, res) => {
     });
 });
 router.patch('/finances/investments/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
-    const existing = await prisma.investment.findUnique({ where: { id } });
+    const existing = await prisma.investment.findFirst({
+        where: {
+            id,
+            family: {
+                ownerUserId: userId,
+            },
+        },
+    });
     if (!existing) {
         res.status(404).json({ message: 'Investment not found.' });
         return;
@@ -217,11 +372,32 @@ router.patch('/finances/investments/:id', async (req, res) => {
     });
 });
 router.delete('/finances/investments/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
+    const existing = await prisma.investment.findFirst({
+        where: {
+            id,
+            family: {
+                ownerUserId: userId,
+            },
+        },
+        select: { id: true },
+    });
+    if (!existing) {
+        res.status(404).json({ message: 'Investment not found.' });
+        return;
+    }
     await prisma.investment.delete({ where: { id } });
     res.status(204).send();
 });
 router.post('/finances/expenses', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const name = asString(req.body?.name);
     const monthlyIls = asOptionalNumber(req.body?.monthlyIls);
     const typeId = asString(req.body?.typeId);
@@ -230,7 +406,7 @@ router.post('/finances/expenses', async (req, res) => {
         res.status(400).json({ message: 'name, monthlyIls and typeId/typeLabel are required.' });
         return;
     }
-    const familyId = asString(req.body?.familyId) || (await getDefaultFamilyId());
+    const familyId = await resolveRequestedFamilyId(userId, req.body?.profileId ?? req.body?.familyId);
     if (!familyId) {
         res.status(404).json({ message: 'Family profile not found.' });
         return;
@@ -264,8 +440,19 @@ router.post('/finances/expenses', async (req, res) => {
     });
 });
 router.patch('/finances/expenses/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
-    const existing = await prisma.familyExpense.findUnique({ where: { id } });
+    const existing = await prisma.familyExpense.findFirst({
+        where: {
+            id,
+            family: {
+                ownerUserId: userId,
+            },
+        },
+    });
     if (!existing) {
         res.status(404).json({ message: 'Expense not found.' });
         return;
@@ -308,7 +495,24 @@ router.patch('/finances/expenses/:id', async (req, res) => {
     });
 });
 router.delete('/finances/expenses/:id', async (req, res) => {
+    const userId = await resolveCurrentUserId(req, res);
+    if (!userId) {
+        return;
+    }
     const id = asString(req.params.id);
+    const existing = await prisma.familyExpense.findFirst({
+        where: {
+            id,
+            family: {
+                ownerUserId: userId,
+            },
+        },
+        select: { id: true },
+    });
+    if (!existing) {
+        res.status(404).json({ message: 'Expense not found.' });
+        return;
+    }
     await prisma.familyExpense.delete({ where: { id } });
     res.status(204).send();
 });

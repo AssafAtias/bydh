@@ -41,16 +41,31 @@ model ExpenseType {
   updatedAt DateTime       @updatedAt
 }
 
+model AppUser {
+  id           String          @id @default(cuid())
+  externalId   String?         @unique
+  email        String?         @unique
+  name         String?
+  passwordHash String?
+  profiles     FamilyProfile[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
 model FamilyProfile {
   id          String         @id @default(cuid())
   key         String         @unique
   familyName  String
   monthlyGoal Decimal?       @db.Decimal(12, 2)
+  ownerUserId String
+  ownerUser   AppUser        @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   incomes     IncomeSource[]
   investments Investment[]
   expenses    FamilyExpense[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
+
+  @@index([ownerUserId])
 }
 
 model IncomeSource {

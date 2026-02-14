@@ -8,23 +8,40 @@ import {
   Button,
   CircularProgress,
   Container,
+  MenuItem,
   Stack,
+  TextField,
   Tab,
   Tabs,
   Toolbar,
   Typography,
 } from '@mui/material'
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BuildHouseSection } from './sections/BuildHouseSection'
 import { ExpensesSection } from './sections/ExpensesSection'
 import { InvestmentsIncomeSection } from './sections/InvestmentsIncomeSection'
 import { useI18n } from './lib/i18n'
 import { ScenariosSection } from './sections/ScenariosSection'
-import { getBuildData, getFinanceData, getScenarios } from './api/dashboard'
+import {
+  clearAuthToken,
+  createProfile,
+  getAuthToken,
+  getBuildData,
+  getFinanceData,
+  getMe,
+  getProfiles,
+  getScenarios,
+  login,
+  register,
+  setAuthToken,
+} from './api/dashboard'
+
+const PROFILE_STORAGE_KEY = 'bydh_active_profile_id'
 
 function App() {
   const { locale, setLocale, t } = useI18n()
+  const queryClient = useQueryClient()
   const menu = useMemo(
     () =>
       [
@@ -35,13 +52,117 @@ function App() {
     [t],
   )
   const [tab, setTab] = useState<(typeof menu)[number]['key']>('investments')
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' })
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(() => localStorage.getItem(PROFILE_STORAGE_KEY) ?? '')
+  const [newProfileName, setNewProfileName] = useState('')
 
-  const financeQuery = useQuery({ queryKey: ['finances'], queryFn: getFinanceData })
-  const buildQuery = useQuery({ queryKey: ['build'], queryFn: getBuildData })
-  const scenarioQuery = useQuery({ queryKey: ['scenarios'], queryFn: getScenarios })
+  const meQuery = useQuery({
+    queryKey: ['me'],
+    queryFn: getMe,
+    enabled: Boolean(getAuthToken()),
+    retry: false,
+  })
+  const isAuthenticated = Boolean(meQuery.data)
 
-  const isLoading = financeQuery.isLoading || buildQuery.isLoading || scenarioQuery.isLoading
-  const hasError = financeQuery.isError || buildQuery.isError || scenarioQuery.isError
+  const profilesQuery = useQuery({
+    queryKey: ['profiles'],
+    queryFn: getProfiles,
+    enabled: isAuthenticated,
+  })
+  const financeQuery = useQuery({
+    queryKey: ['finances', selectedProfileId],
+    queryFn: () => getFinanceData(selectedProfileId),
+    enabled: isAuthenticated && Boolean(selectedProfileId),
+  })
+  const buildQuery = useQuery({ queryKey: ['build'], queryFn: getBuildData, enabled: isAuthenticated })
+  const scenarioQuery = useQuery({ queryKey: ['scenarios'], queryFn: getScenarios, enabled: isAuthenticated })
+  const loginMutation = useMutation({ mutationFn: login })
+  const registerMutation = useMutation({ mutationFn: register })
+  const createProfileMutation = useMutation({
+    mutationFn: createProfile,
+    onSuccess: (createdProfile) => {
+      setSelectedProfileId(createdProfile.id)
+      localStorage.setItem(PROFILE_STORAGE_KEY, createdProfile.id)
+      setNewProfileName('')
+      queryClient.invalidateQueries({ queryKey: ['profiles'] })
+    },
+  })
+
+  useEffect(() => {
+    if (meQuery.isError && getAuthToken()) {
+      clearAuthToken()
+      localStorage.removeItem(PROFILE_STORAGE_KEY)
+      setSelectedProfileId('')
+    }
+  }, [meQuery.isError])
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return
+    }
+
+    const profiles = profilesQuery.data ?? []
+    if (profiles.length === 0) {
+      if (selectedProfileId) {
+        setSelectedProfileId('')
+        localStorage.removeItem(PROFILE_STORAGE_KEY)
+      }
+      return
+    }
+
+    if (profiles.some((profile) => profile.id === selectedProfileId)) {
+      return
+    }
+
+    setSelectedProfileId(profiles[0].id)
+    localStorage.setItem(PROFILE_STORAGE_KEY, profiles[0].id)
+  }, [isAuthenticated, profilesQuery.data, selectedProfileId])
+
+  const submitAuth = () => {
+    if (authMode === 'login') {
+      loginMutation.mutate(
+        {
+          email: authForm.email.trim(),
+          password: authForm.password,
+        },
+        {
+          onSuccess: ({ token }) => {
+            setAuthToken(token)
+            setAuthForm((prev) => ({ ...prev, password: '' }))
+            queryClient.invalidateQueries({ queryKey: ['me'] })
+          },
+        },
+      )
+      return
+    }
+
+    registerMutation.mutate(
+      {
+        name: authForm.name.trim(),
+        email: authForm.email.trim(),
+        password: authForm.password,
+      },
+      {
+        onSuccess: ({ token }) => {
+          setAuthToken(token)
+          setAuthForm((prev) => ({ ...prev, password: '' }))
+          queryClient.invalidateQueries({ queryKey: ['me'] })
+        },
+      },
+    )
+  }
+
+  const logout = () => {
+    clearAuthToken()
+    localStorage.removeItem(PROFILE_STORAGE_KEY)
+    setSelectedProfileId('')
+    queryClient.clear()
+  }
+
+  const isLoading =
+    meQuery.isLoading || profilesQuery.isLoading || buildQuery.isLoading || scenarioQuery.isLoading || financeQuery.isLoading
+  const hasError = profilesQuery.isError || buildQuery.isError || scenarioQuery.isError || financeQuery.isError
 
   const sectionTitle = useMemo(() => {
     switch (tab) {
@@ -79,6 +200,11 @@ function App() {
             {t('appName')}
           </Typography>
           <Stack direction="row" spacing={1} ml="auto">
+            {isAuthenticated ? (
+              <Button size="small" color="inherit" onClick={logout}>
+                {t('authLogout')}
+              </Button>
+            ) : null}
             <Button size="small" variant={locale === 'he' ? 'contained' : 'outlined'} onClick={() => setLocale('he')}>
               {t('langHebrew')}
             </Button>
@@ -90,6 +216,54 @@ function App() {
       </AppBar>
 
       <Container maxWidth="lg" sx={{ py: { xs: 2, md: 4 } }}>
+        {!isAuthenticated ? (
+          <Stack spacing={2} maxWidth={460} mx="auto" mt={8}>
+            <Typography variant="h5" fontWeight={800}>
+              {authMode === 'login' ? t('authLoginTitle') : t('authRegisterTitle')}
+            </Typography>
+            <TextField
+              label={t('authEmail')}
+              value={authForm.email}
+              onChange={(event) => setAuthForm((prev) => ({ ...prev, email: event.target.value }))}
+            />
+            {authMode === 'register' ? (
+              <TextField
+                label={t('authName')}
+                value={authForm.name}
+                onChange={(event) => setAuthForm((prev) => ({ ...prev, name: event.target.value }))}
+              />
+            ) : null}
+            <TextField
+              label={t('authPassword')}
+              type="password"
+              value={authForm.password}
+              onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))}
+            />
+            <Button
+              variant="contained"
+              onClick={submitAuth}
+              disabled={
+                loginMutation.isPending ||
+                registerMutation.isPending ||
+                !authForm.email.trim() ||
+                !authForm.password ||
+                (authMode === 'register' && !authForm.name.trim())
+              }
+            >
+              {authMode === 'login' ? t('authLoginButton') : t('authRegisterButton')}
+            </Button>
+            {(loginMutation.isError || registerMutation.isError) && (
+              <Alert severity="error">{t('authError')}</Alert>
+            )}
+            <Button
+              onClick={() => setAuthMode((prev) => (prev === 'login' ? 'register' : 'login'))}
+              color="inherit"
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              {authMode === 'login' ? t('authSwitchToRegister') : t('authSwitchToLogin')}
+            </Button>
+          </Stack>
+        ) : (
         <Stack spacing={3}>
           <Box
             sx={{
@@ -108,6 +282,42 @@ function App() {
             <Typography mt={1} color="text.secondary">
               {t('heroSubtitle')}
             </Typography>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} mt={2}>
+              <TextField
+                select
+                size="small"
+                label={t('profileLabel')}
+                value={selectedProfileId}
+                onChange={(event) => {
+                  setSelectedProfileId(event.target.value)
+                  localStorage.setItem(PROFILE_STORAGE_KEY, event.target.value)
+                }}
+                sx={{ minWidth: { md: 280 } }}
+              >
+                {(profilesQuery.data ?? []).map((profile) => (
+                  <MenuItem key={profile.id} value={profile.id}>
+                    {profile.familyName}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                size="small"
+                label={t('profileNewLabel')}
+                value={newProfileName}
+                onChange={(event) => setNewProfileName(event.target.value)}
+              />
+              <Button
+                variant="contained"
+                disabled={createProfileMutation.isPending || !newProfileName.trim()}
+                onClick={() =>
+                  createProfileMutation.mutate({
+                    familyName: newProfileName.trim(),
+                  })
+                }
+              >
+                {t('profileCreate')}
+              </Button>
+            </Stack>
           </Box>
 
           <Tabs
@@ -161,10 +371,21 @@ function App() {
             <Alert severity="error">{t('apiError')}</Alert>
           ) : null}
 
-          {!isLoading && !hasError && financeQuery.data && buildQuery.data && scenarioQuery.data ? (
+          {!isLoading && !hasError && (profilesQuery.data?.length ?? 0) === 0 ? (
+            <Alert severity="info">{t('profileEmptyState')}</Alert>
+          ) : null}
+
+          {!isLoading &&
+          !hasError &&
+          financeQuery.data &&
+          buildQuery.data &&
+          scenarioQuery.data &&
+          selectedProfileId ? (
             <Stack spacing={2.5}>
-              {tab === 'investments' ? <InvestmentsIncomeSection finance={financeQuery.data} /> : null}
-              {tab === 'expenses' ? <ExpensesSection finance={financeQuery.data} /> : null}
+              {tab === 'investments' ? (
+                <InvestmentsIncomeSection finance={financeQuery.data} profileId={selectedProfileId} />
+              ) : null}
+              {tab === 'expenses' ? <ExpensesSection finance={financeQuery.data} profileId={selectedProfileId} /> : null}
               {tab === 'build' ? <BuildHouseSection builds={buildQuery.data} /> : null}
 
               <Box>
@@ -176,6 +397,7 @@ function App() {
             </Stack>
           ) : null}
         </Stack>
+        )}
       </Container>
     </Box>
   )

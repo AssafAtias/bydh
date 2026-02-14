@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { config as loadEnv } from 'dotenv'
+import { hash } from 'bcryptjs'
 import { PrismaClient } from '@prisma/client'
 
 const workspaceEnvPath = path.resolve(process.cwd(), 'apps/api/.env')
@@ -15,6 +16,7 @@ async function main() {
   await prisma.investment.deleteMany()
   await prisma.incomeSource.deleteMany()
   await prisma.familyProfile.deleteMany()
+  await prisma.appUser.deleteMany()
   await prisma.expenseType.deleteMany()
   await prisma.buildCostItem.deleteMany()
   await prisma.houseType.deleteMany()
@@ -74,11 +76,20 @@ async function main() {
     prisma.expenseType.create({ data: { key: 'children', label: 'Children / Education' } }),
   ])
 
+  const defaultUser = await prisma.appUser.create({
+    data: {
+      name: 'Default User',
+      email: 'demo@planyourhome.local',
+      passwordHash: await hash('demo123456', 10),
+    },
+  })
+
   const family = await prisma.familyProfile.create({
     data: {
       key: 'family_default',
       familyName: 'Asaf & Talia',
       monthlyGoal: 22668,
+      ownerUserId: defaultUser.id,
     },
   })
 

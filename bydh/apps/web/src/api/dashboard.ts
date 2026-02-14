@@ -1,6 +1,8 @@
 import axios from 'axios'
 import { z } from 'zod'
 
+const AUTH_TOKEN_STORAGE_KEY = 'bydh_auth_token'
+
 const buildItemSchema = z.object({
   id: z.string(),
   code: z.string(),
@@ -78,21 +80,96 @@ const scenarioSchema = z.object({
   notes: z.string().nullable(),
 })
 
+const profileSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  familyName: z.string(),
+  monthlyGoal: z.number().nullable(),
+  createdAt: z.string(),
+})
+
+const authUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+})
+
+const authResponseSchema = z.object({
+  token: z.string(),
+  user: authUserSchema,
+})
+
 export type HouseBuild = z.infer<typeof houseBuildSchema>
 export type FamilyFinance = z.infer<typeof financeSchema>
 export type Scenario = z.infer<typeof scenarioSchema>
+export type FamilyProfile = z.infer<typeof profileSchema>
+export type AuthUser = z.infer<typeof authUserSchema>
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:4010/api',
 })
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+}
+
+export function setAuthToken(token: string): void {
+  localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
+}
+
+export function clearAuthToken(): void {
+  localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+}
+
+export async function register(payload: {
+  name: string
+  email: string
+  password: string
+}): Promise<{ token: string; user: AuthUser }> {
+  const response = await api.post('/auth/register', payload)
+  return authResponseSchema.parse(response.data)
+}
+
+export async function login(payload: { email: string; password: string }): Promise<{ token: string; user: AuthUser }> {
+  const response = await api.post('/auth/login', payload)
+  return authResponseSchema.parse(response.data)
+}
+
+export async function getMe(): Promise<AuthUser> {
+  const response = await api.get('/auth/me')
+  return authUserSchema.parse(response.data)
+}
 
 export async function getBuildData(): Promise<HouseBuild[]> {
   const response = await api.get('/build')
   return z.array(houseBuildSchema).parse(response.data)
 }
 
-export async function getFinanceData(): Promise<FamilyFinance> {
-  const response = await api.get('/finances')
+export async function getProfiles(): Promise<FamilyProfile[]> {
+  const response = await api.get('/profiles')
+  return z.array(profileSchema).parse(response.data)
+}
+
+export async function createProfile(payload: {
+  familyName: string
+  monthlyGoal?: number | null
+}): Promise<FamilyProfile> {
+  const response = await api.post('/profiles', payload)
+  return profileSchema.parse(response.data)
+}
+
+export async function getFinanceData(profileId?: string): Promise<FamilyFinance> {
+  const response = await api.get('/finances', {
+    params: profileId ? { profileId } : undefined,
+  })
   return financeSchema.parse(response.data)
 }
 
@@ -105,7 +182,7 @@ export async function createIncome(payload: {
   name: string
   type: string
   monthlyIls: number
-  familyId?: string
+  profileId?: string
 }): Promise<void> {
   await api.post('/finances/incomes', payload)
 }
@@ -131,7 +208,7 @@ export async function createInvestment(payload: {
   provider?: string
   currentValueIls: number
   yearlyDepositIls?: number | null
-  familyId?: string
+  profileId?: string
 }): Promise<void> {
   await api.post('/finances/investments', payload)
 }
@@ -158,7 +235,7 @@ export async function createExpense(payload: {
   monthlyIls: number
   typeId?: string
   typeLabel?: string
-  familyId?: string
+  profileId?: string
 }): Promise<void> {
   await api.post('/finances/expenses', payload)
 }

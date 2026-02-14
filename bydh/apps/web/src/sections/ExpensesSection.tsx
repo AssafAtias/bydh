@@ -10,9 +10,10 @@ import { toCurrency } from '../lib/format'
 
 interface Props {
   finance: FamilyFinance
+  profileId: string
 }
 
-export function ExpensesSection({ finance }: Props) {
+export function ExpensesSection({ finance, profileId }: Props) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const [drafts, setDrafts] = useState<Record<string, { name: string; monthlyIls: string; typeId: string }>>({})
@@ -158,7 +159,7 @@ export function ExpensesSection({ finance }: Props) {
                     name: newExpense.name.trim(),
                     monthlyIls: Number(newExpense.monthlyIls),
                     typeId: newExpense.typeId,
-                    familyId: finance.id,
+                    profileId,
                   },
                   {
                     onSuccess: () =>
