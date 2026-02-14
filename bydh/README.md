@@ -48,25 +48,55 @@ npm run dev
 
 ## Deployment
 
-### Vercel (web)
+### 1) Render (API + Postgres)
 
-- Root directory: `apps/web`
-- Build command: `npm run build -w apps/web`
-- Output directory: `apps/web/dist`
-- Env var: `VITE_API_URL=https://<your-render-api>/api`
+This repo includes `render.yaml`, so you can deploy with Render Blueprint:
 
-### Render (api)
+1. In Render: **New +** -> **Blueprint**
+2. Select this GitHub repo/branch
+3. Render creates:
+   - `bydh-postgres` (managed Postgres)
+   - `bydh-api` (Node web service)
+4. In `bydh-api` service env vars, set:
+   - `CORS_ORIGIN=https://<your-vercel-domain>`
+5. Deploy
 
-- Root directory: repo root
-- Build command: `npm install && npm run prisma:generate -w apps/api && npm run build -w apps/api`
-- Start command: `npm run start -w apps/api`
-- Env vars:
-  - `DATABASE_URL`
-  - `PORT`
-  - `CORS_ORIGIN=https://<your-vercel-domain>`
+`render.yaml` already runs:
+- build: install deps + Prisma generate + API build
+- start: Prisma `migrate deploy` + API start
 
-Use Render managed Postgres and run migrations during deploy:
+After deploy, verify:
+- `GET https://<your-render-api>/health`
+
+### 2) Vercel (web)
+
+This repo includes root `vercel.json` for monorepo build config.
+
+1. In Vercel: **Add New...** -> **Project**
+2. Import this GitHub repo
+3. Keep root as repository root (do not change to `apps/web`)
+4. Set env var:
+   - `VITE_API_URL=https://<your-render-api>/api`
+5. Deploy
+
+### 3) Final wiring
+
+After Vercel gives you a production URL:
+
+1. Update Render `CORS_ORIGIN` to your Vercel URL
+2. Redeploy `bydh-api`
+3. Test register/login and data CRUD from the Vercel app
+
+## Release
+
+Tag and publish from your local repo:
 
 ```bash
-npm run prisma:migrate -w apps/api
+git tag -a v1.0.0 -m "First production release"
+git push origin v1.0.0
 ```
+
+Then in GitHub:
+- Open **Releases** -> **Draft a new release**
+- Choose tag `v1.0.0`
+- Publish release notes
