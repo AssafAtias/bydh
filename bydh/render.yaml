@@ -1,0 +1,26 @@
+databases:
+  - name: bydh-postgres
+    databaseName: bydh
+    user: bydh
+    plan: free
+
+services:
+  - type: web
+    name: bydh-api
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install && npm run prisma:generate -w apps/api && npm run build -w apps/api
+    startCommand: npm run prisma:migrate:deploy -w apps/api && npm run start -w apps/api
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bydh-postgres
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false

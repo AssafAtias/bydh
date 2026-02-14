@@ -18,6 +18,11 @@ const makeTypeKey = (prefix, label) => `${prefix}_${label
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 24)}_${Math.random().toString(36).slice(2, 7)}`;
+const makeHouseTypeKey = (label) => `house_${label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24)}_${Math.random().toString(36).slice(2, 7)}`;
 const resolveCurrentUserId = async (req, res) => {
     const userId = getUserIdFromRequest(req);
     if (!userId) {
@@ -83,6 +88,37 @@ router.get('/build', async (_req, res) => {
         };
     });
     res.json(grouped);
+});
+router.post('/build/types', async (req, res) => {
+    const label = asString(req.body?.label);
+    const description = asString(req.body?.description);
+    if (!hasValue(label)) {
+        res.status(400).json({ message: 'label is required.' });
+        return;
+    }
+    const duplicate = await prisma.houseType.findFirst({
+        where: { label: { equals: label, mode: 'insensitive' } },
+        select: { id: true },
+    });
+    if (duplicate) {
+        res.status(409).json({ message: 'House type already exists.' });
+        return;
+    }
+    const created = await prisma.houseType.create({
+        data: {
+            key: makeHouseTypeKey(label),
+            label,
+            description: hasValue(description) ? description : null,
+        },
+    });
+    res.status(201).json({
+        id: created.id,
+        key: created.key,
+        label: created.label,
+        description: created.description,
+        total: 0,
+        items: [],
+    });
 });
 router.get('/profiles', async (req, res) => {
     const userId = await resolveCurrentUserId(req, res);
